@@ -1,0 +1,159 @@
+import Database from 'better-sqlite3'
+import path from 'path'
+import { app } from 'electron'
+import fs from 'fs'
+
+let db: Database.Database
+
+export function initDatabase() {
+  const userDataPath = app.getPath('userData')
+  const dbPath = path.join(userDataPath, 'dhurta.db')
+
+  db = new Database(dbPath)
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL,
+      title TEXT,
+      favicon TEXT,
+      visited_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS bookmark_folders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      url TEXT NOT NULL UNIQUE,
+      title TEXT,
+      favicon TEXT,
+      folder_id INTEGER REFERENCES bookmark_folders(id) ON DELETE SET NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_history_visited ON history(visited_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
+  `)
+
+  // Default settings — ALL security features OFF so they never activate without
+  // explicit user action. Gestures stay on (they're not a security risk).
+  const defaults: Record<string, string> = {
+    incinerateDays: '30',
+    ghostMode: 'false',
+    downloadAskWhere: 'false',
+    gesturePinchZoom: 'true',
+    gestureSwipe: 'true',
+    security_antiFingerprint: 'true',
+    security_blockWebRTC: 'true',
+    security_autoClean: 'false',
+    security_ipRotation: 'false',
+    security_cookieGuard: 'false',
+    security_adBlocker: 'false',
+    security_httpsOnly: 'false',
+  }
+
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
+  )
+  for (const [k, v] of Object.entries(defaults)) {
+    insert.run(k, v)
+  }
+
+  // One-time migration: older versions seeded security flags as 'true' by mistake.
+  // Reset them all to 'false' once so existing installs match the new default.
+  // After this runs, the marker row prevents it from firing again, so any
+  // security features the user later enables are preserved across restarts.
+  const migrated = db.prepare("SELECT value FROM settings WHERE key = '_migration_v2_secoff'").get()
+  if (!migrated) {
+    const forceOff = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    ;['security_antiFingerprint','security_blockWebRTC','security_autoClean',
+      'security_ipRotation','security_cookieGuard','security_adBlocker','security_httpsOnly'].forEach(k => forceOff.run(k, 'false'))
+    forceOff.run('_migration_v2_secoff', '1')
+  }
+
+  // v3 migration: unify bare 'cookieGuard'/'adBlocker' keys into their
+  // security_-prefixed canonical forms so the net layer (which always reads
+  // security_cookieGuard / security_adBlocker) and the UI share one row.
+  const migratedV3 = db.prepare("SELECT value FROM settings WHERE key = '_migration_v3_unify_keys'").get()
+  if (!migratedV3) {
+    const upsert = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    const del    = db.prepare('DELETE FROM settings WHERE key = ?')
+    for (const [bare, canonical] of [['cookieGuard', 'security_cookieGuard'], ['adBlocker', 'security_adBlocker']] as const) {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(bare) as { value: string } | undefined
+      if (row?.value === 'true') upsert.run(canonical, 'true')
+      del.run(bare)
+    }
+    upsert.run('_migration_v3_unify_keys', '1')
+  }
+
+  // Seed default favourites on first run only (table starts empty)
+  const bmCount = (db.prepare('SELECT COUNT(*) AS n FROM bookmarks').get() as { n: number }).n
+  if (bmCount === 0) {
+    db.prepare('INSERT OR IGNORE INTO bookmarks (url, title, favicon) VALUES (?, ?, ?)').run('dhurta-tool://setu', 'Dhurta Setu', '')
+  }
+
+  // v5 migration: enable WebRTC block + anti-fingerprint by default for all installs.
+  // These are browser-level protections that don't require VPN/Tor and should always
+  // be on. Only runs once; any explicit user choice made afterwards is preserved.
+  const migratedV5 = db.prepare("SELECT value FROM settings WHERE key = '_migration_v5_privacy_defaults'").get()
+  if (!migratedV5) {
+    const setOn = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+    setOn.run('security_blockWebRTC', 'true')
+    setOn.run('security_antiFingerprint', 'true')
+    setOn.run('_migration_v5_privacy_defaults', '1')
+  }
+
+  // v4 migration: add folder_id column to bookmarks for existing installs
+  const migratedV4 = db.prepare("SELECT value FROM settings WHERE key = '_migration_v4_bookmark_folders'").get()
+  if (!migratedV4) {
+    try { db.exec('ALTER TABLE bookmarks ADD COLUMN folder_id INTEGER REFERENCES bookmark_folders(id) ON DELETE SET NULL') } catch (_) {}
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('_migration_v4_bookmark_folders', '1')").run()
+  }
+
+  // Backfill: ensure Dhurta Setu exists as a bookmark for existing installs
+  db.prepare('INSERT OR IGNORE INTO bookmarks (url, title, favicon) VALUES (?, ?, ?)').run('dhurta-tool://setu', 'Dhurta Setu', '')
+
+  // Run incinerate on startup
+  runIncinerate()
+}
+
+export function getDb() {
+  return db
+}
+
+export function getSettingSync(key: string): string {
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    return row?.value ?? ''
+  } catch { return '' }
+}
+
+export function runIncinerate() {
+  const row = db
+    .prepare('SELECT value FROM settings WHERE key = ?')
+    .get('incinerateDays') as { value: string } | undefined
+  const days = parseInt(row?.value ?? '30', 10)
+  if (days > 0) {
+    const cutoff = Math.floor(Date.now() / 1000) - days * 86400
+    db.prepare('DELETE FROM history WHERE visited_at < ?').run(cutoff)
+  }
+}
+
+export function nukeDatabase() {
+  const userDataPath = app.getPath('userData')
+  const dbPath = path.join(userDataPath, 'dhurta.db')
+  db.close()
+  fs.unlinkSync(dbPath)
+}

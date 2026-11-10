@@ -1,0 +1,442 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Theme: Dark (default — Dhurta Black deep-black palette) ──────────────── */
+:root {
+  color-scheme: dark;
+  --color-obsidian: 6 6 8;      /* #060608 — deeper than standard Dhurta    */
+  --color-surface:  11 11 15;   /* #0B0B0F                                   */
+  --color-surface2: 18 18 24;   /* #121218                                   */
+  --color-surface3: 26 26 34;   /* #1A1A22                                   */
+  --color-border:   36 36 48;   /* #242430 — slightly blue-tinted            */
+  --color-muted:    88 88 110;  /* #58586E                                   */
+  --color-text:     230 232 240;/* #E6E8F0 — slightly cool white             */
+  --color-text-dim: 140 142 160;/* #8C8EA0                                   */
+  /* Cyan developer accent */
+  --color-accent:   0 212 255;  /* #00D4FF                                   */
+  /* Ghost mode tab bar */
+  --color-ghost-tab: 10 0 20;
+  --color-ghost-border: 255 0 51;
+}
+
+/* ── Theme: Light ──────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  color-scheme: light;
+  /* Blue-tinted neutral palette — feels airy and premium against saffron */
+  --color-obsidian: 250 251 252;    /* #FAFBFC — near-white with subtle cool tint */
+  --color-surface:  242 244 248;    /* #F2F4F8 — light panel bg                  */
+  --color-surface2: 232 235 242;    /* #E8EBF2 — nested surfaces                 */
+  --color-surface3: 220 224 234;    /* #DCE0EA — hover surface                   */
+  --color-border:   198 204 218;    /* #C6CCDA — clean visible border             */
+  --color-muted:    130 142 164;    /* #828EA4 — muted icons / secondary text     */
+  --color-text:     13 18 38;       /* #0D1226 — deep navy-black                  */
+  --color-text-dim: 64 78 108;      /* #404E6C — secondary text                   */
+  /* Ghost mode tab bar — light lavender tint for light theme */
+  --color-ghost-tab: 238 232 255;
+  --color-ghost-border: 180 80 220;
+}
+
+body {
+  background: rgb(var(--color-obsidian));
+  color: rgb(var(--color-text));
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar — slim Opera-style, fades when idle */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(100,100,100,0.25); border-radius: 6px; transition: background 0.25s; }
+::-webkit-scrollbar-thumb:hover { background: #00D4FF; }
+
+/* ── Light mode overrides ──────────────────────────────────────────────────── */
+[data-theme="light"] ::-webkit-scrollbar-track { background: transparent; }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 6px; }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #00D4FF; }
+
+/* Tab bar items — rounded top corners for Chrome-style physical tab shape */
+.tab-sharp { border-radius: 6px 6px 0 0; }
+
+/* Saffron underline for active tab + elevation shadow */
+.tab-active {
+  position: relative;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.42), 0 -1px 0 rgba(255,255,255,0.03) inset;
+}
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #FF4500;
+  box-shadow: 0 0 8px #FF4500;
+}
+
+/* Light mode active tab — crisp underline, no dark glow bleed */
+[data-theme="light"] .tab-active::after {
+  box-shadow: 0 0 5px rgba(255, 69, 0, 0.45);
+}
+
+/* Light mode active tab — subtle top shadow for "lifted" feeling */
+[data-theme="light"] .tab-active {
+  box-shadow: 0 -1px 6px rgba(13, 18, 38, 0.06) inset;
+}
+
+/* Sidebar icon glow on hover */
+.sidebar-icon {
+  transition: color 0.15s, filter 0.15s;
+}
+.sidebar-icon:hover {
+  color: #FF4500;
+  filter: drop-shadow(0 0 6px #FF4500);
+}
+
+/* Ghost mode pulse on sidebar icon */
+.ghost-active {
+  color: #FF4500;
+  animation: saffron-pulse 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px #FF4500);
+}
+
+/* Light mode — remove neon glow from sidebar icons (looks harsh on white) */
+[data-theme="light"] .sidebar-icon:hover {
+  color: #FF4500;
+  filter: none;
+}
+[data-theme="light"] .ghost-active {
+  filter: none;
+}
+
+/* Glitch on hover */
+.glitch-hover:hover {
+  animation: glitch 0.4s ease-in-out;
+}
+
+/* Glassmorphism sidebar */
+.glass {
+  background: rgba(10, 10, 10, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Light mode sidebar — white frosted glass with right-side depth shadow */
+[data-theme="light"] .glass {
+  background: rgba(248, 249, 252, 0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 2px 0 24px rgba(13, 18, 38, 0.07), 1px 0 0 rgba(13, 18, 38, 0.05);
+  border-right-color: rgba(198, 204, 218, 0.5);
+}
+
+/* URL bar glassmorphism — frosted chrome feel like Opera */
+.url-bar {
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+
+/* UI density overrides — set via data-density on <html> */
+[data-density="compact"] body { zoom: 0.91; }
+[data-density="comfortable"] body { zoom: 1.08; }
+
+/* Text size overrides — set via data-fontsize on <html> */
+[data-fontsize="small"]  body { font-size: 11px; }
+[data-fontsize="large"]  body { font-size: 15px; }
+[data-fontsize="xlarge"] body { font-size: 17px; }
+
+/* Draggable titlebar region */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Input reset */
+input, textarea {
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+}
+
+/* URL bar font — Inter for a clean Chrome/Opera feel */
+.url-font {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+}
+
+/* Panel overlay fade-in */
+.panel-overlay {
+  animation: fade-in 0.15s ease-out;
+}
+
+/* Nuclear button pulse */
+.nuclear-btn {
+  transition: all 0.2s;
+}
+.nuclear-btn:hover {
+  background: #FF4500;
+  box-shadow: 0 0 20px #FF4500, 0 0 40px #FF450044;
+}
+
+/* Light mode nuclear — softer glow (dark glow bleeds on white) */
+[data-theme="light"] .nuclear-btn:hover {
+  background: #FF4500;
+  box-shadow: 0 0 14px rgba(255, 69, 0, 0.4), 0 2px 8px rgba(255, 69, 0, 0.25);
+  color: #fff;
+}
+
+@keyframes glitch {
+  0%, 100% { transform: translate(0); opacity: 1; }
+  20% { transform: translate(-2px, 1px); opacity: 0.8; }
+  40% { transform: translate(2px, -1px); opacity: 0.9; }
+  60% { transform: translate(-1px, 2px); opacity: 0.85; }
+  80% { transform: translate(1px, -2px); opacity: 0.95; }
+}
+
+@keyframes saffron-pulse {
+  0%, 100% { box-shadow: 0 0 4px #FF4500; }
+  50% { box-shadow: 0 0 12px #FF4500, 0 0 24px #FF450055; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Chrome/Opera-style panel slide-in from left ──────────────────────────── */
+@keyframes panel-slide-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.panel-overlay {
+  animation: panel-slide-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Tab smooth-appear on new tab ─────────────────────────────────────────── */
+@keyframes tab-appear {
+  from { opacity: 0; transform: scaleX(0.85); transform-origin: left; }
+  to   { opacity: 1; transform: scaleX(1); }
+}
+.tab-new-appear {
+  animation: tab-appear 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Smooth tab background transition ─────────────────────────────────────── */
+.tab-sharp {
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+/* ── Close button always visible on active tab ────────────────────────────── */
+.tab-close-btn {
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.1s ease, transform 0.08s ease;
+}
+.group:hover .tab-close-btn,
+.tab-is-active .tab-close-btn {
+  opacity: 0.55;
+}
+.tab-close-btn:hover {
+  opacity: 1 !important;
+  color: #FF4500;
+}
+
+/* ── Tooltip slide-down ────────────────────────────────────────────────────── */
+@keyframes tooltip-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.tab-tooltip {
+  animation: tooltip-in 0.12s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Toggle switch — smooth thumb slide ──────────────────────────────────── */
+.toggle-thumb {
+  transition: left 0.18s cubic-bezier(0.22, 1, 0.36, 1), background 0.15s ease;
+}
+.toggle-track {
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* ── Button press ripple ──────────────────────────────────────────────────── */
+@keyframes btn-press {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(0.93); }
+  100% { transform: scale(1); }
+}
+
+/* ── Sidebar panel item hover ─────────────────────────────────────────────── */
+.sidebar-btn {
+  transition: color 0.12s ease, background 0.12s ease, transform 0.08s ease;
+}
+.sidebar-btn:active {
+  transform: scale(0.9);
+}
+
+/* ── URL bar focus ring (Chrome-style) ───────────────────────────────────── */
+.url-bar-focus-ring {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+/* ── Inline confirm row (extension removal) ──────────────────────────────── */
+@keyframes confirm-slide-in {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 48px; }
+}
+.confirm-row {
+  animation: confirm-slide-in 0.14s ease-out;
+  overflow: hidden;
+}
+
+@keyframes security-slide-down {
+  from { max-height: 0; opacity: 0; }
+  to { max-height: 120px; opacity: 1; }
+}
+
+@keyframes tab-tooltip-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: tab-tooltip-in 0.1s ease-out;
+}
+
+/* Favicon placeholder shimmer — plays while favicon loads */
+@keyframes favicon-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.favicon-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: rgba(60,60,60,0.8);
+  border-radius: 2px;
+}
+.favicon-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+  animation: favicon-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Tab audio — pulse when playing */
+@keyframes audio-pulse {
+  0%, 100% { opacity: 0.65; }
+  50%       { opacity: 1; }
+}
+.tab-audio-playing { animation: audio-pulse 1.8s ease-in-out infinite; }
+
+/* Chakra privacy mode — slow wheel spin, accelerates on first enable then settles */
+@keyframes chakra-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.chakra-active {
+  animation: chakra-spin 6s linear infinite;
+  filter: drop-shadow(0 0 6px #FF4500) drop-shadow(0 0 14px #FF450055);
+}
+
+.chakra-idle {
+  opacity: 0.65;
+  transition: opacity 0.2s;
+}
+
+.chakra-idle:hover {
+  opacity: 1;
+}
+
+/* Tab bar loading progress bar — indeterminate shimmer */
+@keyframes tab-loading-sweep {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(200%); }
+  100% { transform: translateX(200%); }
+}
+
+.tab-loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, #FF4500 40%, #FFB300 60%, transparent 100%);
+  animation: tab-loading-sweep 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes dl-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* ── Light mode component elevation ───────────────────────────────────────── */
+
+/* Panels slide in with a shadow to "float" above the browser content */
+[data-theme="light"] .panel-overlay {
+  box-shadow: 4px 0 32px rgba(13, 18, 38, 0.1), 1px 0 0 rgba(13, 18, 38, 0.06);
+}
+
+/* URL bar — separate it from the white page content with a crisp bottom shadow */
+[data-theme="light"] .url-bar {
+  background: rgb(var(--color-surface));
+  box-shadow: 0 1px 0 rgba(13, 18, 38, 0.06), 0 2px 8px rgba(13, 18, 38, 0.04);
+  border-bottom-color: rgba(198, 204, 218, 0.7) !important;
+}
+
+/* Tab bar — light mode top border and deeper active-tab separation */
+[data-theme="light"] .tab-bar {
+  background: rgb(var(--color-surface));
+  border-bottom-color: rgba(198, 204, 218, 0.8) !important;
+}
+
+/* Inactive tab hover in light mode — warmer saffron tint */
+[data-theme="light"] .tab-inactive-hover:hover {
+  background: rgb(var(--color-surface2));
+}
+
+/* Download tray popup in light — distinct card shadow */
+[data-theme="light"] .download-tray-popup {
+  box-shadow: 0 8px 32px rgba(13, 18, 38, 0.12), 0 2px 8px rgba(13, 18, 38, 0.06),
+              0 0 0 1px rgba(13, 18, 38, 0.05);
+}
+
+/* URL input box in light — inset shadow for depth, white bg for contrast */
+[data-theme="light"] .url-input-box {
+  background: #ffffff !important;
+  box-shadow: inset 0 1px 3px rgba(13, 18, 38, 0.08), inset 0 0 0 1px rgba(198, 204, 218, 0.8);
+  border-color: transparent !important;
+}
+
+[data-theme="light"] .url-input-box:focus-within {
+  box-shadow: inset 0 1px 3px rgba(13, 18, 38, 0.06),
+              0 0 0 2px rgba(255, 69, 0, 0.18);
+  border-color: transparent !important;
+}
+
+/* Saffron badge / chip — brighter on white backgrounds */
+[data-theme="light"] .chip-saffron {
+  background: rgba(255, 69, 0, 0.08);
+  color: #cc3700;
+  border-color: rgba(255, 69, 0, 0.3);
+}
+
+/* Ghost badge in light mode */
+[data-theme="light"] .ghost-badge {
+  background: rgba(255, 69, 0, 0.06);
+  color: #cc3700;
+  border-color: rgba(255, 69, 0, 0.25);
+}

@@ -1,0 +1,215 @@
+{
+  "name": "dhurta-black",
+  "version": "1.0.0",
+  "description": "Dhurta Black — developer & advanced privacy browser by Dhurta.inc.",
+  "main": "dist-electron/main.js",
+  "author": {
+    "name": "Dhurta.inc",
+    "email": "contact@dhurta.com",
+    "url": "https://dhurta.com"
+  },
+  "homepage": "https://dhurta.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prashantkeshr/DhurtaBlack.git"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "workspaces": [
+    "packages/core",
+    "packages/ui",
+    "packages/mobile",
+    "packages/connect-pwa"
+  ],
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on http://localhost:19173 && npm run build:electron && electron .\"",
+    "dev:renderer": "vite",
+    "build": "vite build && npm run build:electron && electron-builder",
+    "build:renderer": "vite build",
+    "build:core": "npm run build -w @dhurta/core",
+    "build:electron": "npm run build:core && tsc -p tsconfig.electron.json && node electron/scripts/genInjection.cjs && node -e \"const fs=require('fs');fs.copyFileSync('electron/webviewPreload.js','dist-electron/webviewPreload.js');fs.copyFileSync('electron/offline.html','dist-electron/offline.html');fs.copyFileSync('electron/popupPreload.js','dist-electron/popupPreload.js');fs.copyFileSync('electron/downloadPopup.html','dist-electron/downloadPopup.html');fs.copyFileSync('electron/warmthPopup.html','dist-electron/warmthPopup.html');fs.copyFileSync('electron/appsPopup.html','dist-electron/appsPopup.html');fs.copyFileSync('electron/toolsPopup.html','dist-electron/toolsPopup.html');fs.copyFileSync('electron/sitePopup.html','dist-electron/sitePopup.html');fs.copyFileSync('electron/connectionTroublePopup.html','dist-electron/connectionTroublePopup.html');fs.copyFileSync('electron/torConnecting.html','dist-electron/torConnecting.html');fs.copyFileSync('electron/popoutPreload.js','dist-electron/popoutPreload.js');try{fs.copyFileSync('electron/browser-polyfill.min.js','dist-electron/browser-polyfill.min.js')}catch(_){}\"",
+    "preview": "vite preview",
+    "postinstall": "node scripts/postinstall.cjs"
+  },
+  "dependencies": {
+    "@cliqz/adblocker-electron": "^1.27.0",
+    "better-sqlite3": "^9.4.3",
+    "cross-fetch": "^4.0.0",
+    "electron-updater": "^6.3.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/node": "^20.12.7",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "electron": "^30.5.1",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11",
+    "vite-plugin-electron": "^0.28.7",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "inc.dhurta.black",
+    "productName": "Dhurta Black",
+    "copyright": "Copyright © 2026 Dhurta.inc. All Rights Reserved.",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/tor",
+        "to": "tor"
+      },
+      {
+        "from": "tools/setu",
+        "to": "tools/setu",
+        "filter": [
+          "**/*",
+          "!**/node_modules/**",
+          "!**/.git/**"
+        ]
+      },
+      {
+        "from": "tools/connect",
+        "to": "tools/connect",
+        "filter": [
+          "**/*",
+          "!**/node_modules/**",
+          "!**/.git/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "appx",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "requestedExecutionLevel": "asInvoker",
+      "publisherName": "Dhurta.org",
+      "signingHashAlgorithms": ["sha256"],
+      "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dhurta Black",
+      "uninstallDisplayName": "Dhurta Black",
+      "license": "LICENSE"
+    },
+    "appx": {
+      "applicationId": "DhurtaBlack",
+      "backgroundColor": "#060608",
+      "displayName": "Dhurta Black",
+      "publisherDisplayName": "Dhurta.org",
+      "identityName": "PLACEHOLDER_IDENTITY_FROM_PARTNER_CENTER",
+      "publisher": "PLACEHOLDER_PUBLISHER_CN_FROM_PARTNER_CENTER",
+      "languages": ["en-US"],
+      "showNameOnTiles": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64",
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "category": "public.app-category.utilities"
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Network",
+      "description": "Dhurta - a sovereign, privacy-native desktop browser by Dhurta.inc.",
+      "desktop": {
+        "entry": {
+          "MimeType": "x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/dhurta-connect;",
+          "StartupWMClass": "Dhurta"
+        }
+      }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "releaseType": "draft"
+      }
+    ]
+  }
+}
+

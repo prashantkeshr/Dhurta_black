@@ -1,0 +1,465 @@
+name: ◼ Dhurta Black — Build & Release (Dhurta.inc)
+
+# Triggers:
+#   • Any v* tag push → full build + publish a DRAFT GitHub Release
+#   • Push to main → build + emulator-test (no release publish)
+#   • workflow_dispatch → manual run (android always; iOS only if opted in)
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      build_ios:
+        description: "Also build iOS (needs the Xcode project — off until scaffolded/signed)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# ── Project identity (single source of truth in package.json; echoed here for
+#    CI log clarity). Do NOT hardcode these — electron-builder reads package.json.
+env:
+  APP_NAME: DhurtaBlack
+  ORG_NAME: Dhurta.inc
+  HOMEPAGE: https://dhurta.com
+
+jobs:
+  # ── @dhurta/core — build + typecheck the shared package once, upstream of all ──
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build & typecheck @dhurta/core
+        # Build from the repo ROOT, not packages/core: a subdir install produces
+        # broken dependency hoisting (esbuild becomes unresolvable for tsup). The
+        # root install hoists everything correctly. --legacy-peer-deps is required
+        # for the workspace's React version mismatch (mobile/ui expansion pkgs),
+        # and the non-fatal postinstall wrapper means the Electron native-deps
+        # rebuild can't break this pure-TypeScript job.
+        run: |
+          npm install --legacy-peer-deps
+          npm run build:core
+          node ./node_modules/typescript/bin/tsc --noEmit -p packages/core/tsconfig.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dhurta-black-core-dist
+          path: packages/core/dist
+
+  # ── Desktop: Windows + Linux (REQUIRED for publish) ──
+  # macOS is a separate optional job below so a slow/queued runner never
+  # blocks the Windows/Linux release from publishing.
+  desktop:
+    needs: core
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            name: windows
+            arm64_cc: ""
+            arm64_cxx: ""
+          - os: ubuntu-latest
+            name: linux
+            arm64_cc: aarch64-linux-gnu-gcc
+            arm64_cxx: aarch64-linux-gnu-g++
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Python 3 is required by node-gyp to compile better-sqlite3 on Windows.
+      # windows-2022 runners ship Python 3.x but pip may not find it by default.
+      - name: Setup Python (Windows — node-gyp native build)
+        if: matrix.name == 'windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Linux: rpm builder + arm64 cross-compiler (aarch64 AppImage/deb).
+      # Note: libstdc++ arm64 headers are NOT needed — electron-builder bundles
+      # its own Electron binary for arm64; only better-sqlite3 needs cross-gcc.
+      - name: Install build tools (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo dpkg --add-architecture arm64 || true
+          sudo apt-get install -y --no-install-recommends \
+            rpm \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu
+
+      - name: Install dependencies
+        # The workspace has a known React peer-version mismatch; legacy resolution
+        # is the standard fix (matches local dev). npm ci would fail on it.
+        # npm_config_* env vars pass node-gyp settings cross-shell on all OSes.
+        # msvs_version=2022 points node-gyp at the VS2022 toolchain that ships on
+        # windows-2022 runners, avoiding "Could not find Visual Studio" errors.
+        run: npm install --legacy-peer-deps
+        env:
+          npm_config_msvs_version: "2022"
+          npm_config_python: python
+
+      # Rebuild native modules for the HOST arch. electron-builder's install-app-deps
+      # calls @electron/rebuild internally — no separate electron-rebuild package needed.
+      - name: Rebuild native modules for Electron (host arch)
+        run: npx electron-builder install-app-deps
+        continue-on-error: true
+
+      - name: Typecheck
+        run: |
+          node ./node_modules/typescript/bin/tsc --noEmit
+          node ./node_modules/typescript/bin/tsc -p tsconfig.electron.json --noEmit
+
+      - name: Build renderer + main (no packaging)
+        run: |
+          npm run build:renderer
+          npm run build:electron
+
+      # ── Code-signing setup (Windows only) ────────────────────────────────────
+      # On Windows, if the CSC_LINK repo secret holds a base64-encoded .pfx,
+      # we write CSC_LINK + CSC_KEY_PASSWORD into GITHUB_ENV so the Package
+      # steps below pick them up and produce a signed .exe / .appx installer
+      # (shown as "Verified publisher: Dhurta.org" in SmartScreen).
+      # On Linux (and when the secret is absent) we fall back to unsigned builds.
+      # We never pass empty CSC_* vars — electron-builder treats "" as a bad path.
+      - name: Prepare code-signing
+        shell: bash
+        env:
+          _CSC_LINK: ${{ secrets.CSC_LINK }}
+          _CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          if [ "${{ matrix.name }}" = "windows" ] && [ -n "$_CSC_LINK" ]; then
+            printf 'CSC_LINK=%s\n'         "$_CSC_LINK"         >> "$GITHUB_ENV"
+            printf 'CSC_KEY_PASSWORD=%s\n' "$_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=true"             >> "$GITHUB_ENV"
+            echo "::notice::Windows build will be code-signed (CSC_LINK is set)"
+          else
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          fi
+
+      # ── x64 packages (REQUIRED) ──────────────────────────────────────────────
+      # Packages x64 and writes latest.yml / latest-mac.yml / latest-linux.yml
+      # to the release/ folder. We use --publish never here: three parallel OS
+      # jobs all calling --publish always race to create/overwrite the same draft
+      # release, which causes electron-builder to silently skip uploading files
+      # it thinks are already there. All uploads happen in the "Upload ALL
+      # artifacts" step below via gh CLI, which is race-safe with --clobber.
+      - name: Package x64
+        run: npx electron-builder --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # CSC_IDENTITY_AUTO_DISCOVERY (and optionally CSC_LINK / CSC_KEY_PASSWORD)
+          # are injected from GITHUB_ENV by the "Prepare code-signing" step above.
+
+      # ── arm64 packages (BEST-EFFORT) ─────────────────────────────────────────
+      # Built locally with --publish never so latest*.yml (written above) is NOT
+      # overwritten. arm64 artifacts are uploaded manually to the release below.
+      # On Linux: CC/CXX point electron-builder's internal @electron/rebuild at the
+      # cross-compiler. On Windows: VS2022 ARM64 toolchain is auto-discovered via
+      # npm_config_arch=arm64. On macOS: macos-latest is M1 — arm64 is native.
+      - name: Package arm64 (local build only)
+        run: npx electron-builder --arm64 --publish never
+        env:
+          npm_config_arch: arm64
+          CC: ${{ matrix.arm64_cc }}
+          CXX: ${{ matrix.arm64_cxx }}
+          # CSC vars inherited from GITHUB_ENV (set by "Prepare code-signing").
+        continue-on-error: true
+
+      # ── Upload ALL release artifacts to GitHub Release ───────────────────────
+      # electron-builder --publish always can silently skip files when a draft
+      # release already exists (e.g. created by a parallel OS job). Using gh CLI
+      # for every file is reliable regardless of draft/published state.
+      # latest*.yml files are written locally by the x64 step even with --publish
+      # never, and uploaded here so the auto-update channel always works.
+      - name: Upload ALL artifacts to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          # Safety net: create the draft release if electron-builder didn't.
+          gh release create "v${VERSION}" --draft --title "Dhurta Black v${VERSION}" \
+            --notes "" --repo "${{ github.repository }}" 2>/dev/null || true
+          shopt -s nullglob
+          for f in release/*.exe release/*.exe.blockmap \
+                    release/*.dmg release/*.dmg.blockmap \
+                    release/*.zip release/*.zip.blockmap \
+                    release/*.AppImage release/*.AppImage.blockmap \
+                    release/*.deb release/*.rpm \
+                    release/*.appx \
+                    release/latest*.yml; do
+            [ -f "$f" ] || continue
+            echo "Uploading $f"
+            gh release upload "v${VERSION}" "$f" \
+              --clobber --repo "${{ github.repository }}" || true
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      # Keep all installers as workflow artifacts for testing / manual distribution.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dhurta-black-${{ matrix.name }}
+          path: |
+            release/*.exe
+            release/*.appx
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+          if-no-files-found: ignore
+
+  # ── macOS (OPTIONAL — does NOT block publish) ────────────────────────────────
+  # macos-13 runners are sometimes slow to assign. This job runs in parallel
+  # with the required desktop matrix; publish does NOT wait for it. If macOS
+  # completes it uploads its DMGs to the release via gh CLI.
+  desktop-mac:
+    needs: core
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-13
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+      - name: Rebuild native modules for Electron (host arch)
+        run: npx electron-builder install-app-deps
+        continue-on-error: true
+      - name: Typecheck
+        run: |
+          node ./node_modules/typescript/bin/tsc --noEmit
+          node ./node_modules/typescript/bin/tsc -p tsconfig.electron.json --noEmit
+      - name: Build renderer + main (no packaging)
+        run: |
+          npm run build:renderer
+          npm run build:electron
+      - name: Package x64
+        run: npx electron-builder --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Package arm64 (local build only)
+        run: npx electron-builder --arm64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          npm_config_arch: arm64
+        continue-on-error: true
+      - name: Package universal DMG + ZIP
+        run: npx electron-builder --universal --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        continue-on-error: true
+      - name: Upload macOS artifacts to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release create "v${VERSION}" --draft --title "Dhurta Black v${VERSION}" \
+            --notes "" --repo "${{ github.repository }}" 2>/dev/null || true
+          shopt -s nullglob
+          for f in release/*.dmg release/*.dmg.blockmap \
+                    release/*.zip release/*.zip.blockmap \
+                    release/latest-mac.yml; do
+            [ -f "$f" ] || continue
+            echo "Uploading $f"
+            gh release upload "v${VERSION}" "$f" \
+              --clobber --repo "${{ github.repository }}" || true
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dhurta-black-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: ignore
+
+  # ── Promote draft → published release (Windows + Linux required; macOS optional) ──
+  publish:
+    needs: [desktop]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      # Try to attach the Android APK. If the android job never ran or failed,
+      # the download step will fail — we continue anyway so the desktop release
+      # still publishes.
+      - name: Download Android APK (optional)
+        uses: actions/download-artifact@v4
+        with:
+          name: dhurta-black-android-debug
+          path: android-apk
+        continue-on-error: true
+
+      - name: Publish GitHub Release (desktop + optional Android)
+        # electron-builder already uploaded every installer + latest*.yml files
+        # to the DRAFT release during the desktop job. Here we:
+        #   1. Attach the Android APK if it was built.
+        #   2. Promote the draft → published so electron-updater can see it.
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          APK=$(find android-apk -name '*arm64*.apk' 2>/dev/null | head -n1)
+          if [ -n "$APK" ]; then
+            cp "$APK" "DhurtaBlack-${VERSION}-android-arm64.apk"
+            gh release upload "v${VERSION}" "DhurtaBlack-${VERSION}-android-arm64.apk" --clobber --repo "${{ github.repository }}"
+          fi
+          gh release edit "v${VERSION}" --draft=false --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Android: GeckoView host via Gradle ──
+  # Runs on a manual dispatch (produces the APK as a test artifact) AND on a v*
+  # tag push (the publish job then attaches its APK to the GitHub Release).
+  #
+  # NOTE: this is the CANONICAL build path for the Android app. The local dev
+  # machine's JDK cannot open an NIO selector (its AF_UNIX loopback self-pipe
+  # fails with "Invalid argument"), so Gradle cannot run there at all — CI on a
+  # Linux runner is where the APK is actually produced.
+  android:
+    needs: core
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Accept SDK licenses and install the exact components the Gradle build
+      # needs. android-actions/setup-android@v3 fails on ubuntu-24.04 runners,
+      # so we call sdkmanager directly. ANDROID_HOME is set by the runner image.
+      - name: Set up Android SDK
+        run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            --licenses > /dev/null 2>&1 || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      # Debug build → app-debug.apk is signed with the auto-generated debug key,
+      # so it installs directly on any device (sideload) with no manual signing.
+      # Release signing is deferred until there's a keystore secret to sign with.
+      - name: Build debug APK
+        working-directory: packages/android
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dhurta-black-android-debug
+          path: packages/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  # ── Android emulator smoke test ──
+  # Boots a headless x86_64 Android VM on CI, installs the x86_64 APK, launches
+  # the app, and captures a screenshot + logcat — proof the app actually runs
+  # and renders (the dev machine can't run an emulator locally). Runs on manual
+  # dispatch and main pushes — never on tags, so a flaky emulator can't block a
+  # tagged release.
+  android-emulator-test:
+    needs: android
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dhurta-black-android-debug
+          path: apk
+
+      # The android-emulator-runner needs hardware acceleration (KVM) to boot in
+      # reasonable time; this udev rule makes /dev/kvm usable by the runner user.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Resolve the x86_64 APK path HERE (normal step, known CWD) with an
+      # absolute path, print the artifact listing + sizes for the record, and
+      # fail fast with a clear message if it's missing — the emulator-runner's
+      # own script runs in a different context where a relative `find` came up
+      # empty.
+      - name: Locate x86_64 APK
+        run: |
+          ls -la "$GITHUB_WORKSPACE/apk"
+          APK=$(find "$GITHUB_WORKSPACE/apk" -name '*x86_64*.apk' | head -n1)
+          if [ -z "$APK" ]; then echo "::error::No x86_64 APK found in artifact"; exit 1; fi
+          echo "Resolved APK: $APK ($(du -h "$APK" | cut -f1))"
+          echo "X86_APK=$APK" >> "$GITHUB_ENV"
+
+      - name: Install + launch in emulator, capture proof
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: default
+          force-avd-creation: true
+          # GeckoView bundles the full Firefox engine and spawns a GPU + several
+          # content processes; the default ~2 GB AVD low-memory-kills it on
+          # launch (signal 9). Give the VM 4 GB so it survives — real phones
+          # (e.g. the 6-8 GB POCO) have the headroom, this just lets CI match.
+          ram-size: 4096
+          heap-size: 576
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -memory 4096
+          disable-animations: true
+          script: |
+            echo "Installing $X86_APK"
+            adb install -r "$X86_APK"
+            # Launch via the LAUNCHER intent (debug applicationId has a .debug suffix).
+            adb shell monkey -p express.hyperlocal.dhurta.debug -c android.intent.category.LAUNCHER 1
+            # Give the engine time to spin up and load the start page.
+            sleep 40
+            adb exec-out screencap -p > emulator-screen.png
+            # Capture the app's own logcat lines for diagnosis.
+            adb logcat -d -t 600 > logcat.txt || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dhurta-black-emulator-proof
+          path: |
+            emulator-screen.png
+            logcat.txt
+          if-no-files-found: warn
+
+  # ── iOS: WebKit host via xcodebuild (requires macOS runner + provisioning) ──
+  # Expansion scope, OPT-IN. Deferred: packages/ios currently has loose Swift
+  # files but no Xcode project, so this job cannot build yet. Gated behind the
+  # build_ios dispatch input (default false) so ordinary runs stay fully green
+  # instead of showing a red iOS failure that masks real problems. Flip the
+  # "Also build iOS" checkbox on Run workflow once the Xcode project exists.
+  ios:
+    needs: core
+    if: github.event_name == 'workflow_dispatch' && inputs.build_ios
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build (unsigned archive)
+        working-directory: packages/ios
+        run: |
+          xcodebuild -scheme Dhurta -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO clean build

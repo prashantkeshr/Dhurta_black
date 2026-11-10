@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Dhurta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap">
+<style>
+  :root {
+    --saffron:    #FF4500;
+    --saffron2:   #FF7A2F;
+    --neon:       #22D3FF;
+    --purple:     #A855F7;
+    --bg:         #06060C;
+    --bg2:        #0A0A14;
+    --text:       #E9ECFF;
+    --muted:      #6B7096;
+    --dim:        #444868;
+    --glass:      rgba(255,255,255,.06);
+    --glass2:     rgba(255,255,255,.10);
+    --gbord:      rgba(255,255,255,.10);
+    --gbord2:     rgba(255,255,255,.16);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(60% 38% at 18%  8%, rgba(255,69,0,.14)   0%, transparent 60%),
+      radial-gradient(50% 42% at 85% 18%, rgba(168,85,247,.14)  0%, transparent 58%),
+      radial-gradient(80% 55% at 50%115%, rgba(34,211,255,.06)  0%, transparent 70%),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100%;
+    padding: 22px 16px 130px;
+    overflow-x: hidden;
+    user-select: none;
+    transition: background .4s;
+  }
+
+  /* Ghost mode overlay */
+  body.ghost {
+    background:
+      radial-gradient(60% 38% at 18%  8%, rgba(220,0,0,.18)    0%, transparent 60%),
+      radial-gradient(50% 42% at 85% 18%, rgba(160,0,40,.14)    0%, transparent 58%),
+      radial-gradient(80% 55% at 50%115%, rgba(255,50,50,.06)   0%, transparent 70%),
+      var(--bg);
+  }
+
+  /* Ghost session banner */
+  .ghost-banner {
+    display: none;
+    text-align: center;
+    font: 700 8px 'JetBrains Mono', 'Courier New', monospace;
+    letter-spacing: .22em;
+    color: #FF5050;
+    background: rgba(200,0,0,.14);
+    border: 1px solid rgba(255,60,60,.25);
+    border-radius: 10px;
+    padding: 9px 0;
+    margin-bottom: 16px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    animation: rise .4s both;
+  }
+  body.ghost .ghost-banner { display: block; }
+
+  /* CLOCK */
+  .clock {
+    text-align: center;
+    margin: 4px 0 18px;
+    animation: rise .5s .02s both;
+  }
+  .clock-time {
+    font: 300 56px/1 'JetBrains Mono', 'Courier New', monospace;
+    letter-spacing: .04em;
+    color: var(--text);
+    text-shadow: 0 0 50px rgba(255,69,0,.18), 0 0 100px rgba(255,69,0,.06);
+  }
+  body.ghost .clock-time {
+    text-shadow: 0 0 50px rgba(220,0,0,.28), 0 0 100px rgba(220,0,0,.10);
+  }
+  .clock-date {
+    font: 400 8px/1 'JetBrains Mono', 'Courier New', monospace;
+    letter-spacing: .32em;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  /* SEARCH BAR */
+  .search-wrap {
+    margin: 0 auto 20px;
+    max-width: 520px;
+    animation: rise .5s .06s both;
+  }
+  .search-pill {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 52px;
+    padding: 0 8px 0 16px;
+    background: var(--glass);
+    border: 1.5px solid var(--gbord);
+    border-radius: 26px;
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 28px -8px rgba(0,0,0,.55);
+    cursor: text;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .search-pill:active { border-color: rgba(255,69,0,.4); }
+  .search-pill svg { flex: 0 0 auto; opacity: .45; }
+  .search-pill input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font: 13px 'Segoe UI', system-ui, sans-serif;
+    min-width: 0;
+    pointer-events: none;
+  }
+  .search-pill input::placeholder { color: var(--muted); }
+  .go-btn {
+    flex: 0 0 auto;
+    background: var(--saffron);
+    color: #fff;
+    border: none;
+    font: 700 9px 'JetBrains Mono', monospace;
+    letter-spacing: .14em;
+    padding: 9px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px -4px rgba(255,69,0,.55);
+    pointer-events: all;
+    transition: transform .15s;
+  }
+  .go-btn:active { transform: scale(.88); }
+
+  /* SEARCH OVERLAY (full-screen) */
+  .sug-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(6,6,12,.94);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    flex-direction: column;
+    animation: fadein .18s both;
+  }
+  .sug-overlay.open { display: flex; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+
+  .sug-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 14px 12px;
+    background: rgba(255,255,255,.03);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .sug-input-pill {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 46px;
+    padding: 0 14px;
+    background: rgba(255,255,255,.08);
+    border: 1.5px solid rgba(255,69,0,.45);
+    border-radius: 23px;
+    box-shadow: 0 0 0 3px rgba(255,69,0,.10);
+  }
+  #sq {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font: 14px 'Segoe UI', system-ui, sans-serif;
+    min-width: 0;
+  }
+  #sq::placeholder { color: var(--muted); }
+  .sug-cancel {
+    background: none;
+    border: none;
+    color: var(--saffron);
+    font: 500 13px 'Segoe UI', sans-serif;
+    cursor: pointer;
+    padding: 0 2px;
+    white-space: nowrap;
+  }
+
+  .sug-body { flex: 1; overflow-y: auto; scrollbar-width: none; }
+  .sug-body::-webkit-scrollbar { display: none; }
+
+  .sug-section-head {
+    font: 700 7.5px 'JetBrains Mono', monospace;
+    letter-spacing: .26em;
+    color: var(--muted);
+    padding: 14px 16px 5px;
+    text-transform: uppercase;
+  }
+  .sug-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 16px;
+    cursor: pointer;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    color: var(--text);
+    transition: background .12s;
+  }
+  .sug-row:active { background: rgba(255,255,255,.05); }
+  .sug-ico {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: rgba(255,255,255,.07);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex: 0 0 auto;
+  }
+  .sug-main { font-size: 13px; }
+  .sug-hint { font-size: 9px; color: var(--muted); margin-top: 1px; }
+
+  /* QUICK LINKS 4×2 */
+  .favs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    max-width: 520px;
+    margin: 0 auto 22px;
+    animation: rise .5s .09s both;
+  }
+  .fav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    color: var(--muted);
+  }
+  .fav-ic {
+    width: 58px;
+    height: 58px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--glass);
+    border: 1px solid var(--gbord);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 4px 18px -8px rgba(0,0,0,.65);
+    transition: transform .18s cubic-bezier(.2,.8,.2,1), border-color .18s, box-shadow .18s;
+    overflow: hidden;
+  }
+  .fav-ic img  { width: 30px; height: 30px; object-fit: contain; }
+  .fav-ic .fb  { font-size: 22px; font-weight: 800; }
+  .fav.saffron .fav-ic {
+    background: rgba(255,69,0,.12);
+    border-color: rgba(255,69,0,.28);
+    box-shadow: inset 0 1px 0 rgba(255,140,0,.14), 0 4px 18px -4px rgba(255,69,0,.22);
+  }
+  .fav:active .fav-ic {
+    transform: scale(.84);
+    border-color: rgba(255,69,0,.5);
+    box-shadow: 0 0 20px -4px rgba(255,69,0,.35);
+  }
+  .fav em { font-style: normal; font-size: 8.5px; text-align: center; }
+
+  /* DISCOVER STRIP */
+  .discover {
+    max-width: 520px;
+    margin: 0 auto;
+    animation: rise .5s .13s both;
+  }
+  .dhead {
+    font-size: 7.5px;
+    letter-spacing: .26em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 2px 10px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .ddot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--saffron);
+    box-shadow: 0 0 8px rgba(255,69,0,.6);
+  }
+  .dstrip {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    margin: 0 -16px;
+    padding: 0 16px 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .dstrip::-webkit-scrollbar { display: none; }
+  .dcard {
+    flex: 0 0 60%;
+    scroll-snap-align: start;
+    border-radius: 16px;
+    padding: 10px;
+    background: var(--glass);
+    border: 1px solid var(--gbord);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    text-decoration: none;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 6px 20px -12px rgba(0,0,0,.55);
+    transition: transform .18s;
+  }
+  .dcard:active { transform: scale(.96); }
+  .dimg {
+    height: 58px; border-radius: 10px;
+    background: radial-gradient(80% 120% at 15% 0%, rgba(255,69,0,.45), transparent 60%),
+                linear-gradient(135deg, rgba(168,85,247,.4), rgba(255,69,0,.28));
+  }
+  .dimg.b { background: radial-gradient(80% 120% at 85% 0%, rgba(34,211,255,.4), transparent 60%),
+                         linear-gradient(135deg, rgba(168,85,247,.4), rgba(34,211,255,.28)); }
+  .dimg.c { background: radial-gradient(80% 120% at 50%120%, rgba(255,69,0,.35), transparent 60%),
+                         linear-gradient(135deg, rgba(34,211,255,.35), rgba(168,85,247,.4)); }
+  .dttl { font-size: 11px; color: #c8cce8; margin-top: 8px; font-weight: 700; }
+  .dsub { font-size: 8px; color: var(--muted); margin-top: 2px; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+
+  <div class="ghost-banner">👻&nbsp; GHOST SESSION &nbsp;·&nbsp; TOR ROUTING ACTIVE &nbsp;·&nbsp; ZERO LOGS</div>
+
+  <!-- Clock -->
+  <div class="clock">
+    <div class="clock-time" id="t">00:00</div>
+    <div class="clock-date" id="d"></div>
+  </div>
+
+  <!-- Search pill -->
+  <div class="search-wrap">
+    <div class="search-pill" onclick="openSearch()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e9ecff" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input id="q" type="text" placeholder="Search or enter address" autocomplete="off" readonly>
+      <button class="go-btn" onclick="event.stopPropagation();goSearch()">GO</button>
+    </div>
+  </div>
+
+  <!-- Quick links -->
+  <div class="favs" id="favs"></div>
+
+  <!-- Discover -->
+  <div class="discover">
+    <div class="dhead"><span class="ddot"></span> TRENDING &nbsp;·&nbsp; DISCOVER</div>
+    <div class="dstrip">
+      <a class="dcard" href="https://search.brave.com/search?q=privacy+news">
+        <div class="dimg"></div>
+        <div class="dttl">Privacy this week</div>
+        <div class="dsub">Curated · Brave Search</div>
+      </a>
+      <a class="dcard" href="https://search.brave.com/search?q=technology">
+        <div class="dimg b"></div>
+        <div class="dttl">Tech &amp; Sovereignty</div>
+        <div class="dsub">Curated · Brave Search</div>
+      </a>
+      <a class="dcard" href="https://search.brave.com/search?q=open+source">
+        <div class="dimg c"></div>
+        <div class="dttl">Open Source Radar</div>
+        <div class="dsub">Curated · Brave Search</div>
+      </a>
+      <a class="dcard" href="https://search.brave.com/search?q=cybersecurity+today">
+        <div class="dimg"></div>
+        <div class="dttl">Cyber Watch</div>
+        <div class="dsub">Curated · Brave Search</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Full-screen search overlay -->
+  <div class="sug-overlay" id="sugOverlay">
+    <div class="sug-top">
+      <div class="sug-input-pill">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF4500" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="sq" type="text" placeholder="Search or enter address" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      </div>
+      <button class="sug-cancel" onclick="closeSearch()">Cancel</button>
+    </div>
+    <div class="sug-body" id="sugBody"></div>
+  </div>
+
+<script>
+// ── Ghost mode ──
+(function(){
+  var p = new URLSearchParams(location.search);
+  if (p.get('ghost') === '1') document.body.classList.add('ghost');
+})();
+
+// ── Clock ──
+function pad(n){ return n < 10 ? '0' + n : '' + n; }
+function tick(){
+  var x = new Date();
+  document.getElementById('t').textContent = pad(x.getHours()) + ':' + pad(x.getMinutes());
+  document.getElementById('d').textContent =
+    ['SUN','MON','TUE','WED','THU','FRI','SAT'][x.getDay()] +
+    '  ·  ' + x.getDate() + ' ' +
+    ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][x.getMonth()] +
+    '  ·  ' + x.getFullYear();
+}
+setInterval(tick, 1000); tick();
+
+// ── Quick links ──
+var FAVS = [
+  { n:'Brave',     u:'https://search.brave.com',  d:'brave.com',     f:'🦁' },
+  { n:'YouTube',   u:'https://m.youtube.com',      d:'youtube.com',   f:'▶'  },
+  { n:'GitHub',    u:'https://github.com',          d:'github.com',    f:'◐'  },
+  { n:'X',         u:'https://x.com',               d:'x.com',         f:'𝕏'  },
+  { n:'Reddit',    u:'https://reddit.com',           d:'reddit.com',    f:'◈'  },
+  { n:'Wikipedia', u:'https://en.wikipedia.org',    d:'wikipedia.org', f:'W'  },
+  { n:'Omni',      u:'dhurta://omni',               d:'',              f:'🔱' },
+  { n:'Settings',  u:'dhurta://settings',           d:'',              f:'⚙',  cls:'saffron' }
+];
+var box = document.getElementById('favs');
+FAVS.forEach(function(f, i){
+  var a = document.createElement('a');
+  a.className = 'fav' + (f.cls ? ' ' + f.cls : '');
+  a.href = f.u;
+  a.style.animationDelay = (0.10 + i * 0.03) + 's';
+  var ic = f.d
+    ? '<img src="https://www.google.com/s2/favicons?sz=64&domain=' + f.d + '"' +
+      ' onerror="this.style.display=\'none\';this.nextSibling.style.display=\'block\'">' +
+      '<span class="fb" style="display:none;color:#FF4500">' + f.f + '</span>'
+    : '<span class="fb" style="color:#FF4500">' + f.f + '</span>';
+  a.innerHTML = '<div class="fav-ic">' + ic + '</div><em>' + f.n + '</em>';
+  box.appendChild(a);
+});
+
+// ── Search overlay ──
+var overlay   = document.getElementById('sugOverlay');
+var sq        = document.getElementById('sq');
+var sugBody   = document.getElementById('sugBody');
+var isOpen    = false;
+
+var QUICK = [
+  { ico:'🔱', txt:'Omni Dashboard',   url:'dhurta://omni' },
+  { ico:'🛡', txt:'Brave Search',      url:'https://search.brave.com' },
+  { ico:'🔒', txt:'DuckDuckGo',        url:'https://duckduckgo.com' },
+  { ico:'🐙', txt:'GitHub',            url:'https://github.com' },
+  { ico:'🎬', txt:'YouTube',           url:'https://m.youtube.com' },
+  { ico:'📖', txt:'Wikipedia',         url:'https://en.wikipedia.org' },
+  { ico:'⚙', txt:'Settings',          url:'dhurta://settings' },
+];
+
+function getHist(){
+  try{ return JSON.parse(localStorage.getItem('dh-hist')||'[]'); }catch(e){ return []; }
+}
+function addHist(q){
+  if(!q||q.length<2) return;
+  try{
+    var h = getHist().filter(function(x){ return x!==q; });
+    h.unshift(q);
+    localStorage.setItem('dh-hist', JSON.stringify(h.slice(0,12)));
+  }catch(e){}
+}
+
+function renderSugs(q){
+  sugBody.innerHTML = '';
+  q = (q||'').trim();
+  var ql = q.toLowerCase();
+
+  // Recent
+  var hist = getHist().filter(function(h){ return !ql||h.toLowerCase().indexOf(ql)>=0; }).slice(0,4);
+  if(hist.length){
+    addHead('RECENT');
+    hist.forEach(function(h){ addRow('🕑',h,'',function(){ nav(h); }); });
+  }
+
+  // Quick access
+  var qa = ql ? QUICK.filter(function(s){ return s.txt.toLowerCase().indexOf(ql)>=0||s.url.indexOf(ql)>=0; }) : QUICK;
+  if(qa.length){ addHead('QUICK ACCESS'); qa.forEach(function(s){ addRow(s.ico,s.txt,s.url,function(){ nav(s.url); }); }); }
+
+  // Live search
+  if(q.length>0){
+    addHead('SEARCH');
+    addRow('🔍','Search: '+q,'',function(){ doNav(q); });
+    var isUrl = /^https?:\/\//i.test(q)||(q.indexOf('.')>0&&q.indexOf(' ')<0);
+    if(isUrl) addRow('🌐','Open: '+(/^https?:\/\//i.test(q)?q:'https://'+q),'',function(){ nav(/^https?:\/\//i.test(q)?q:'https://'+q); });
+  }
+}
+
+function addHead(t){ var d=document.createElement('div'); d.className='sug-section-head'; d.textContent=t; sugBody.appendChild(d); }
+function addRow(ico,txt,sub,fn){
+  var b=document.createElement('button'); b.className='sug-row';
+  b.innerHTML='<div class="sug-ico">'+ico+'</div><div><div class="sug-main">'+esc(txt)+'</div>'+(sub?'<div class="sug-hint">'+esc(sub)+'</div>':'')+'</div>';
+  b.onclick=fn; sugBody.appendChild(b);
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function openSearch(){
+  isOpen=true;
+  overlay.classList.add('open');
+  sq.value=document.getElementById('q').value||'';
+  renderSugs(sq.value);
+  setTimeout(function(){ sq.focus(); },60);
+}
+function closeSearch(){
+  isOpen=false;
+  overlay.classList.remove('open');
+  sq.blur();
+}
+function nav(url){
+  closeSearch();
+  setTimeout(function(){ location.href=url; },80);
+}
+function doNav(raw){
+  raw=raw.trim(); if(!raw) return;
+  addHist(raw);
+  var isUrl=/^https?:\/\//i.test(raw)||(raw.indexOf('.')>0&&raw.indexOf(' ')<0);
+  nav(isUrl?(/^https?:\/\//i.test(raw)?raw:'https://'+raw):'https://search.brave.com/search?q='+encodeURIComponent(raw));
+}
+function goSearch(){
+  var v=document.getElementById('q').value.trim();
+  if(v) doNav(v); else openSearch();
+}
+
+sq.addEventListener('input',function(){ renderSugs(sq.value); });
+sq.addEventListener('keydown',function(e){
+  if(e.key==='Enter'||e.keyCode===13){ e.preventDefault(); var v=sq.value.trim(); if(v) doNav(v); }
+});
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&isOpen) closeSearch(); });
+</script>
+</body>
+</html>
