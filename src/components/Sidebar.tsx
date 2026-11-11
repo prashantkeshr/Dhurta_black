@@ -21,6 +21,7 @@ interface Props {
   onLock?: () => void
   hasLock?: boolean
   onSetupLock?: () => void
+  mcpRunning?: boolean
 }
 
 // ── Tier 1: primary privacy actions (full brightness, larger touch area)
@@ -63,6 +64,24 @@ function SecBtn({ children, label, active, danger, onClick }: {
   )
 }
 
+// ── Dev buttons: cyan identity for developer-exclusive panels
+function DevBtn({ children, label, active, onClick }: {
+  children: React.ReactNode; label: string; active?: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      title={label}
+      onClick={onClick}
+      className={[
+        'w-9 h-9 flex items-center justify-center transition-all duration-100 active:scale-[0.92]',
+        active ? 'text-cyan bg-cyan/15 rounded-xl' : 'text-text/40 hover:text-cyan hover:bg-cyan/10 rounded-xl',
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  )
+}
+
 // ── Tier 3: utility/peripheral actions (subdued, small)
 function UtilBtn({ children, label, active, onClick }: {
   children: React.ReactNode; label: string; active?: boolean; onClick: () => void
@@ -88,7 +107,7 @@ function Divider() {
 export default function Sidebar({
   ghostMode, torActive, torConnecting, chakraActive, chakraBusy, chakraWarning,
   onDismissChakraWarning, activePanel, onToggleGhost, onToggleChakra, onSetPanel,
-  onNuclearWipe, onNewTab, onNavigate, onLock, hasLock, onSetupLock,
+  onNuclearWipe, onNewTab, onNavigate, onLock, hasLock, onSetupLock, mcpRunning,
 }: Props) {
   const toggle = (p: Panel) => onSetPanel(activePanel === p ? null : p)
   const appsRef  = useRef<HTMLButtonElement>(null)
@@ -286,6 +305,62 @@ export default function Sidebar({
           <circle cx="9.5" cy="5.8" r="0.6" fill="currentColor" stroke="none" />
         </svg>
       </SecBtn>
+
+      <Divider />
+
+      {/* ━━━ DEVELOPER PANELS (Dhurta Black exclusive — cyan identity) ━━━ */}
+      <DevBtn label="Storage Containers — tab isolation" active={activePanel === 'containers'} onClick={() => toggle('containers')}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <rect x="2" y="6" width="5" height="8" rx="1" />
+          <rect x="9" y="2" width="5" height="12" rx="1" />
+          <line x1="2" y1="3" x2="7" y2="3" strokeLinecap="round" />
+          <line x1="2" y1="5" x2="7" y2="5" strokeLinecap="round" />
+        </svg>
+      </DevBtn>
+
+      <DevBtn label="Code Sandbox — run JS in active tab" active={activePanel === 'sandbox'} onClick={() => toggle('sandbox')}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="5,4 2,8 5,12" />
+          <polyline points="11,4 14,8 11,12" />
+          <line x1="9" y1="3" x2="7" y2="13" />
+        </svg>
+      </DevBtn>
+
+      <DevBtn label="Proxy Matrix — per-domain routing" active={activePanel === 'proxy'} onClick={() => toggle('proxy')}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <circle cx="3" cy="8" r="2" />
+          <circle cx="13" cy="4" r="2" />
+          <circle cx="13" cy="12" r="2" />
+          <line x1="5" y1="8" x2="10" y2="4.5" />
+          <line x1="5" y1="8" x2="10" y2="11.5" />
+        </svg>
+      </DevBtn>
+
+      <DevBtn label="Animations — inspect & control CSS animations" active={activePanel === 'animation'} onClick={() => toggle('animation')}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <circle cx="8" cy="8" r="6" />
+          <path d="M8 4v4l3 3" strokeLinecap="round" />
+          <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      </DevBtn>
+
+      <DevBtn label={`MCP Server${mcpRunning ? ' — running' : ' — stopped'}`} active={mcpRunning} onClick={() => toggle('profiles')}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <rect x="2" y="4" width="12" height="8" rx="1.5" />
+          <circle cx="5" cy="8" r="1" fill="currentColor" stroke="none" />
+          <line x1="8" y1="6" x2="8" y2="10" strokeLinecap="round" />
+          <line x1="10.5" y1="6" x2="10.5" y2="10" strokeLinecap="round" />
+        </svg>
+      </DevBtn>
+
+      <DevBtn label="Profiles — multiple isolated browser sessions" active={activePanel === 'profiles'} onClick={() => toggle('profiles')}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+          <circle cx="6" cy="5.5" r="2.5" />
+          <path d="M1 13.5c0-2.5 2.2-4.5 5-4.5" />
+          <circle cx="12" cy="5.5" r="2" />
+          <path d="M10 13.5c0-2 1.3-3.5 3-4" />
+        </svg>
+      </DevBtn>
 
       <Divider />
 

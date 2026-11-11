@@ -45,6 +45,39 @@ export function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_history_visited ON history(visited_at DESC);
     CREATE INDEX IF NOT EXISTS idx_history_url ON history(url);
+
+    -- ── Dhurta Black: Storage Containers ───────────────────────────────────
+    CREATE TABLE IF NOT EXISTS containers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT '#00D4FF',
+      icon TEXT NOT NULL DEFAULT '📦',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    );
+
+    -- ── Dhurta Black: Proxy Matrix ──────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS proxy_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pattern TEXT NOT NULL,
+      proxy_type TEXT NOT NULL DEFAULT 'direct',
+      proxy_address TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- ── Dhurta Black: Code Snippets ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS snippets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    );
+
+    -- ── Dhurta Black: Per-site fingerprint overrides ─────────────────────────
+    CREATE TABLE IF NOT EXISTS fp_overrides (
+      origin TEXT PRIMARY KEY,
+      mode TEXT NOT NULL DEFAULT 'global'
+    );
   `)
 
   // Default settings — ALL security features OFF so they never activate without
@@ -124,6 +157,16 @@ export function initDatabase() {
 
   // Backfill: ensure Dhurta Setu exists as a bookmark for existing installs
   db.prepare('INSERT OR IGNORE INTO bookmarks (url, title, favicon) VALUES (?, ?, ?)').run('dhurta-tool://setu', 'Dhurta Setu', '')
+
+  // Seed default containers for new installs
+  const containerCount = (db.prepare('SELECT COUNT(*) AS n FROM containers').get() as { n: number }).n
+  if (containerCount === 0) {
+    const ins = db.prepare('INSERT INTO containers (name, color, icon) VALUES (?, ?, ?)')
+    ins.run('Personal',  '#00D4FF', '👤')
+    ins.run('Work',      '#FF9500', '💼')
+    ins.run('Dev',       '#7C3AED', '⚡')
+    ins.run('Dark',      '#FF0033', '🕶')
+  }
 
   // Run incinerate on startup
   runIncinerate()

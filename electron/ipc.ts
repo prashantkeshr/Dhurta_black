@@ -27,6 +27,12 @@ import {
 import { enableAdBlocker, getBlockedCount } from './adBlocker'
 import { isLockEnabled, verifyPin, verifyRecovery, setupPin, changePin, clearPin } from './appLock'
 import { resolveToolUrl, shutdownAllTools } from './tools'
+import {
+  dbGetContainers, dbCreateContainer, dbUpdateContainer, dbDeleteContainer,
+  clearContainerData,
+} from './containers'
+import { startMcpServer, stopMcpServer, getMcpStatus } from './mcp-server'
+import { getProfiles, createProfile, deleteProfile, switchProfile } from './profiles'
 
 // ── App Lock — session state ──────────────────────────────────────────────────
 let _sessionUnlocked = false
@@ -4083,4 +4089,109 @@ export function setupWindowListeners() {
   // Re-apply a previously active proxy so VPN survives app restarts (net layer
   // handles the "active but no saved proxy yet" first-run case by fetching fresh).
   restoreVpnOnStartup().catch(() => {})
+
+  // ── Dhurta Black: Storage Containers ─────────────────────────────────────
+  ipcMain.handle('containers:get',    () => dbGetContainers())
+  ipcMain.handle('containers:create', (_e, name: string, color: string, icon: string) => dbCreateContainer(name, color, icon))
+  ipcMain.handle('containers:update', (_e, id: number, updates: { name?: string; color?: string; icon?: string }) => dbUpdateContainer(id, updates))
+  ipcMain.handle('containers:delete', (_e, id: number) => {
+    clearContainerData(id).catch(() => {})
+    return dbDeleteContainer(id)
+  })
+  ipcMain.handle('containers:assignTab', (_e, _tabId: number, _containerId: number | null) => true)
+
+  // ── Dhurta Black: Per-site fingerprint overrides ─────────────────────────
+  ipcMain.handle('fp:getOverrides', () => {
+    const rows = getDb().prepare('SELECT origin, mode FROM fp_overrides').all() as { origin: string; mode: string }[]
+    return rows.map(r => ({ origin: r.origin, mode: r.mode }))
+  })
+  ipcMain.handle('fp:setOverride', (_e, origin: string, mode: string) => {
+    getDb().prepare('INSERT OR REPLACE INTO fp_overrides (origin, mode) VALUES (?, ?)').run(origin, mode)
+  })
+  ipcMain.handle('fp:deleteOverride', (_e, origin: string) => {
+    getDb().prepare('DELETE FROM fp_overrides WHERE origin = ?').run(origin)
+  })
+
+  // ── Dhurta Black: Proxy Matrix ────────────────────────────────────────────
+  ipcMain.handle('proxy:getRules', () => {
+    const rows = getDb().prepare('SELECT id, pattern, proxy_type, proxy_address, enabled, sort_order FROM proxy_rules ORDER BY sort_order').all() as any[]
+    return rows.map(r => ({ id: r.id, pattern: r.pattern, proxyType: r.proxy_type, proxyAddress: r.proxy_address, enabled: !!r.enabled, sortOrder: r.sort_order }))
+  })
+  ipcMain.handle('proxy:addRule', (_e, rule: { pattern: string; proxyType: string; proxyAddress: string; enabled: boolean; sortOrder: number }) => {
+    const db = getDb()
+    const info = db.prepare('INSERT INTO proxy_rules (pattern, proxy_type, proxy_address, enabled, sort_order) VALUES (?,?,?,?,?)').run(rule.pattern, rule.proxyType, rule.proxyAddress, rule.enabled ? 1 : 0, rule.sortOrder)
+    const row = db.prepare('SELECT id, pattern, proxy_type, proxy_address, enabled, sort_order FROM proxy_rules WHERE id = ?').get(info.lastInsertRowid) as any
+    return { id: row.id, pattern: row.pattern, proxyType: row.proxy_type, proxyAddress: row.proxy_address, enabled: !!row.enabled, sortOrder: row.sort_order }
+  })
+  ipcMain.handle('proxy:updateRule', (_e, id: number, updates: { proxyType?: string; proxyAddress?: string; enabled?: boolean }) => {
+    const fields: string[] = []; const vals: unknown[] = []
+    if (updates.proxyType  !== undefined) { fields.push('proxy_type = ?');    vals.push(updates.proxyType) }
+    if (updates.proxyAddress !== undefined) { fields.push('proxy_address = ?'); vals.push(updates.proxyAddress) }
+    if (updates.enabled !== undefined) { fields.push('enabled = ?'); vals.push(updates.enabled ? 1 : 0) }
+    if (!fields.length) return false
+    vals.push(id)
+    return getDb().prepare(`UPDATE proxy_rules SET ${fields.join(', ')} WHERE id = ?`).run(...vals as []).changes > 0
+  })
+  ipcMain.handle('proxy:deleteRule', (_e, id: number) => getDb().prepare('DELETE FROM proxy_rules WHERE id = ?').run(id).changes > 0)
+  ipcMain.handle('proxy:reorder',   (_e, orderedIds: number[]) => {
+    const stmt = getDb().prepare('UPDATE proxy_rules SET sort_order = ? WHERE id = ?')
+    orderedIds.forEach((id, i) => stmt.run(i, id))
+  })
+
+  // ── Dhurta Black: MCP Server ──────────────────────────────────────────────
+  ipcMain.handle('mcp:start',  async () => { const port = await startMcpServer(); return { port } })
+  ipcMain.handle('mcp:stop',   async () => { await stopMcpServer() })
+  ipcMain.handle('mcp:status', () => getMcpStatus())
+
+  // ── Dhurta Black: Code Sandbox ────────────────────────────────────────────
+  ipcMain.handle('sandbox:execute', async (_e, tabId: number, code: string) => {
+    const win = getMainWindow()
+    if (!win) return { error: 'No main window', logs: [] }
+    const views = (win as any).getBrowserViews?.() ?? []
+    const view: BrowserView | undefined = views.find((v: BrowserView) => (v as any).__tabId === tabId) ?? views[0]
+    if (!view) return { error: 'Tab not found', logs: [] }
+    const logs: string[] = []
+    const wrapped = `
+      (function() {
+        const _logs = [];
+        const _origLog = console.log.bind(console);
+        console.log = (...a) => { _logs.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : String(x)).join(' ')); _origLog(...a) };
+        try {
+          const _result = eval(${JSON.stringify(code)});
+          return { result: _result, logs: _logs };
+        } catch(e) {
+          return { error: e.message, logs: _logs };
+        } finally {
+          console.log = _origLog;
+        }
+      })()`
+    try {
+      const r = await view.webContents.executeJavaScript(wrapped, true)
+      return { result: r?.result, error: r?.error, logs: r?.logs ?? logs }
+    } catch (e: any) {
+      return { error: String(e), logs }
+    }
+  })
+
+  ipcMain.handle('sandbox:getSnippets', () => {
+    const rows = getDb().prepare('SELECT id, name, code, created_at FROM snippets ORDER BY id DESC').all() as any[]
+    return rows.map(r => ({ id: r.id, name: r.name, code: r.code, createdAt: r.created_at }))
+  })
+  ipcMain.handle('sandbox:saveSnippet', (_e, name: string, code: string) => {
+    const db = getDb()
+    const info = db.prepare('INSERT INTO snippets (name, code) VALUES (?, ?)').run(name, code)
+    const row = db.prepare('SELECT id, name, code, created_at FROM snippets WHERE id = ?').get(info.lastInsertRowid) as any
+    return { id: row.id, name: row.name, code: row.code, createdAt: row.created_at }
+  })
+  ipcMain.handle('sandbox:deleteSnippet', (_e, id: number) => getDb().prepare('DELETE FROM snippets WHERE id = ?').run(id).changes > 0)
+
+  // ── Dhurta Black: Profiles ────────────────────────────────────────────────
+  ipcMain.handle('profiles:get',    () => getProfiles())
+  ipcMain.handle('profiles:create', (_e, name: string) => createProfile(name))
+  ipcMain.handle('profiles:delete', (_e, id: string) => deleteProfile(id))
+  ipcMain.handle('profiles:switch', (_e, id: string) => switchProfile(id))
+  ipcMain.handle('profiles:burn',   async () => {
+    await session.defaultSession.clearStorageData()
+    await session.defaultSession.clearCache()
+  })
 }

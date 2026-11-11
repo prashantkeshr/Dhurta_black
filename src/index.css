@@ -68,7 +68,7 @@ body {
 /* Tab bar items — rounded top corners for Chrome-style physical tab shape */
 .tab-sharp { border-radius: 6px 6px 0 0; }
 
-/* Saffron underline for active tab + elevation shadow */
+/* Cyan underline for active tab + elevation shadow (Dhurta Black developer identity) */
 .tab-active {
   position: relative;
   box-shadow: 0 -4px 16px rgba(0,0,0,0.42), 0 -1px 0 rgba(255,255,255,0.03) inset;
@@ -80,8 +80,8 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: #FF4500;
-  box-shadow: 0 0 8px #FF4500;
+  background: #00D4FF;
+  box-shadow: 0 0 8px #00D4FF44;
 }
 
 /* Light mode active tab — crisp underline, no dark glow bleed */

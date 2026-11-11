@@ -357,6 +357,26 @@ export default function AIPanel({ activeTabId, activeTabUrl, activeTabTitle }: P
               }}
               disabled={streaming}
             />
+            <QuickBtn
+              label="Explain selected text"
+              icon={
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.3">
+                  <path d="M2 2h7M2 4.5h5M2 7h7M2 9.5h4" strokeLinecap="round" />
+                  <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
+                </svg>
+              }
+              onClick={async () => {
+                if (!isElectron) return
+                const res = await window.dhurta.executeInTab(activeTabId, 'window.getSelection()?.toString() ?? ""').catch(() => ({ result: '' }))
+                const selection = typeof res?.result === 'string' ? res.result.trim() : ''
+                if (!selection) {
+                  setError('No text selected — select some text on the page first.')
+                  return
+                }
+                await send('Explain this text clearly and concisely:', `Selected text:\n"${selection}"`)
+              }}
+              disabled={streaming}
+            />
           </div>
         </div>
       )}

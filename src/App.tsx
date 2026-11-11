@@ -19,6 +19,11 @@ import DataHubPanel from './components/panels/DataHubPanel'
 import TransparencyPanel from './components/panels/TransparencyPanel'
 import ShortcutsPanel from './components/panels/ShortcutsPanel'
 import AIPanel from './components/panels/AIPanel'
+import ContainersPanel from './components/panels/ContainersPanel'
+import ProxyMatrixPanel from './components/panels/ProxyMatrixPanel'
+import CodeSandboxPanel from './components/panels/CodeSandboxPanel'
+import AnimationPanel from './components/panels/AnimationPanel'
+import ProfileManagerPanel from './components/panels/ProfileManagerPanel'
 import BookmarksBar from './components/BookmarksBar'
 import LockScreen from './components/LockScreen'
 import NotificationPermissionBanner from './components/NotificationPermissionBanner'
@@ -61,6 +66,12 @@ const PANEL_WIDTHS: Record<string, number> = {
   transparency: 360,
   shortcuts: 272,
   ai: 320,
+  // ── Dhurta Black developer panels ──
+  containers: 300,
+  proxy: 340,
+  sandbox: 360,
+  animation: 320,
+  profiles: 300,
 }
 
 export default function App() {
@@ -555,6 +566,12 @@ export default function App() {
                     activeTabTitle={activeTab?.title}
                   />
                 )}
+                {/* ── Dhurta Black developer panels ── */}
+                {activePanel === 'containers' && <ContainersPanel />}
+                {activePanel === 'proxy' && <ProxyMatrixPanel />}
+                {activePanel === 'sandbox' && <CodeSandboxPanel activeTabId={activeTabId} />}
+                {activePanel === 'animation' && <AnimationPanel activeTabId={activeTabId} />}
+                {activePanel === 'profiles' && <ProfileManagerPanel />}
                 {activePanel === 'connect' && (
                   <ConnectPanel
                     activeUrl={activeTab?.url ?? ''}

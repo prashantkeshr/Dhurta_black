@@ -11,6 +11,42 @@ export interface Tab {
   playing?: boolean
   groupId?: number | null
   readerMode?: boolean
+  containerId?: number | null
+}
+
+// ── Storage Containers (Phase 2) ────────────────────────────────────────────
+export interface Container {
+  id: number
+  name: string
+  color: string    // hex e.g. #00D4FF
+  icon: string     // emoji or SVG key
+  createdAt: number
+}
+
+// ── Proxy Matrix (Phase 6) ──────────────────────────────────────────────────
+export type ProxyType = 'direct' | 'vpn' | 'tor' | 'socks5' | 'http'
+export interface ProxyRule {
+  id: number
+  pattern: string    // e.g. "*.google.com"
+  proxyType: ProxyType
+  proxyAddress: string  // empty for direct/vpn/tor
+  enabled: boolean
+  sortOrder: number
+}
+
+// ── Code Sandbox (Phase 8) ──────────────────────────────────────────────────
+export interface CodeSnippet {
+  id: number
+  name: string
+  code: string
+  createdAt: number
+}
+
+// ── Per-site Fingerprint Override (Phase 5) ─────────────────────────────────
+export type FpMode = 'global' | 'real' | 'spoofed'
+export interface FpOverride {
+  origin: string   // e.g. "localhost" or "example.com"
+  mode: FpMode
 }
 
 export interface TabGroup {
@@ -68,6 +104,12 @@ export type Panel =
   | 'transparency'
   | 'shortcuts'
   | 'ai'
+  // ── Dhurta Black developer panels ──
+  | 'containers'
+  | 'proxy'
+  | 'sandbox'
+  | 'animation'
+  | 'profiles'
 
 export interface LockStatus {
   locked: boolean
@@ -282,6 +324,43 @@ export interface DhurtaAPI {
   torNewCircuit(): Promise<{ success: boolean; count?: number; error?: string }>
   on(channel: string, cb: (...args: unknown[]) => void): void
   off(channel: string, cb: (...args: unknown[]) => void): void
+
+  // ── Containers (Phase 2) ──
+  getContainers(): Promise<Container[]>
+  createContainer(name: string, color: string, icon: string): Promise<Container>
+  updateContainer(id: number, updates: { name?: string; color?: string; icon?: string }): Promise<boolean>
+  deleteContainer(id: number): Promise<boolean>
+  assignTabContainer(tabId: number, containerId: number | null): Promise<boolean>
+
+  // ── Per-site fingerprint (Phase 5) ──
+  getFpOverrides(): Promise<FpOverride[]>
+  setFpOverride(origin: string, mode: FpMode): Promise<void>
+  deleteFpOverride(origin: string): Promise<void>
+
+  // ── Proxy matrix (Phase 6) ──
+  getProxyRules(): Promise<ProxyRule[]>
+  addProxyRule(rule: Omit<ProxyRule, 'id'>): Promise<ProxyRule>
+  updateProxyRule(id: number, updates: Partial<ProxyRule>): Promise<boolean>
+  deleteProxyRule(id: number): Promise<boolean>
+  reorderProxyRules(orderedIds: number[]): Promise<void>
+
+  // ── MCP server (Phase 7) ──
+  mcpServerStart(): Promise<{ port: number }>
+  mcpServerStop(): Promise<void>
+  mcpServerStatus(): Promise<{ running: boolean; port: number | null }>
+
+  // ── Code sandbox (Phase 8) ──
+  executeInTab(tabId: number, code: string): Promise<{ result?: unknown; error?: string; logs: string[] }>
+  getSnippets(): Promise<CodeSnippet[]>
+  saveSnippet(name: string, code: string): Promise<CodeSnippet>
+  deleteSnippet(id: number): Promise<boolean>
+
+  // ── Profiles (Phase 10) ──
+  getProfiles(): Promise<{ id: string; name: string; createdAt: number }[]>
+  createProfile(name: string): Promise<{ id: string; name: string; createdAt: number }>
+  switchProfile(id: string): Promise<void>
+  deleteProfile(id: string): Promise<boolean>
+  burnSession(): Promise<void>
 }
 
 declare global {

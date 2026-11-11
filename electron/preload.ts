@@ -275,6 +275,43 @@ contextBridge.exposeInMainWorld('dhurta', {
   // API interceptor
   getRequests: (tabId: number) => ipcRenderer.invoke('interceptor:getRequests', tabId),
 
+  // ── Dhurta Black: Storage Containers ──────────────────────────────────────
+  getContainers: () => ipcRenderer.invoke('containers:get'),
+  createContainer: (name: string, color: string, icon: string) => ipcRenderer.invoke('containers:create', name, color, icon),
+  updateContainer: (id: number, updates: { name?: string; color?: string; icon?: string }) => ipcRenderer.invoke('containers:update', id, updates),
+  deleteContainer: (id: number) => ipcRenderer.invoke('containers:delete', id),
+  assignTabContainer: (tabId: number, containerId: number | null) => ipcRenderer.invoke('containers:assignTab', tabId, containerId),
+
+  // ── Dhurta Black: Per-site fingerprint overrides ───────────────────────────
+  getFpOverrides: () => ipcRenderer.invoke('fp:getOverrides'),
+  setFpOverride: (origin: string, mode: string) => ipcRenderer.invoke('fp:setOverride', origin, mode),
+  deleteFpOverride: (origin: string) => ipcRenderer.invoke('fp:deleteOverride', origin),
+
+  // ── Dhurta Black: Proxy Matrix ─────────────────────────────────────────────
+  getProxyRules: () => ipcRenderer.invoke('proxy:getRules'),
+  addProxyRule: (rule: { pattern: string; proxyType: string; proxyAddress: string; enabled: boolean; sortOrder: number }) => ipcRenderer.invoke('proxy:addRule', rule),
+  updateProxyRule: (id: number, updates: { proxyType?: string; proxyAddress?: string; enabled?: boolean }) => ipcRenderer.invoke('proxy:updateRule', id, updates),
+  deleteProxyRule: (id: number) => ipcRenderer.invoke('proxy:deleteRule', id),
+  reorderProxyRules: (orderedIds: number[]) => ipcRenderer.invoke('proxy:reorder', orderedIds),
+
+  // ── Dhurta Black: MCP Server ───────────────────────────────────────────────
+  mcpServerStart: () => ipcRenderer.invoke('mcp:start'),
+  mcpServerStop: () => ipcRenderer.invoke('mcp:stop'),
+  mcpServerStatus: () => ipcRenderer.invoke('mcp:status'),
+
+  // ── Dhurta Black: Code Sandbox ─────────────────────────────────────────────
+  executeInTab: (tabId: number, code: string) => ipcRenderer.invoke('sandbox:execute', tabId, code),
+  getSnippets: () => ipcRenderer.invoke('sandbox:getSnippets'),
+  saveSnippet: (name: string, code: string) => ipcRenderer.invoke('sandbox:saveSnippet', name, code),
+  deleteSnippet: (id: number) => ipcRenderer.invoke('sandbox:deleteSnippet', id),
+
+  // ── Dhurta Black: Profiles ─────────────────────────────────────────────────
+  getProfiles: () => ipcRenderer.invoke('profiles:get'),
+  createProfile: (name: string) => ipcRenderer.invoke('profiles:create', name),
+  switchProfile: (id: string) => ipcRenderer.invoke('profiles:switch', id),
+  deleteProfile: (id: string) => ipcRenderer.invoke('profiles:delete', id),
+  burnSession: () => ipcRenderer.invoke('profiles:burn'),
+
   // Events from main — wrapper-tracked so off() actually removes the right listener
   on: (channel: string, cb: (...args: unknown[]) => void) => {
     if (!VALID_CHANNELS.has(channel)) return
