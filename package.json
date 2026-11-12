@@ -139,8 +139,8 @@
       "backgroundColor": "#060608",
       "displayName": "Dhurta Black",
       "publisherDisplayName": "Dhurta.org",
-      "identityName": "PLACEHOLDER_IDENTITY_FROM_PARTNER_CENTER",
-      "publisher": "PLACEHOLDER_PUBLISHER_CN_FROM_PARTNER_CENTER",
+      "identityName": "Dhurta.DhurtaBlack",
+      "publisher": "CN=Dhurta.org",
       "languages": ["en-US"],
       "showNameOnTiles": false
     },
