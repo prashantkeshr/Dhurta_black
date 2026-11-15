@@ -1,6 +1,6 @@
 {
   "name": "dhurta-black",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Dhurta Black — developer & advanced privacy browser by Dhurta.inc.",
   "main": "dist-electron/main.js",
   "author": {
