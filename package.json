@@ -1,6 +1,6 @@
 {
   "name": "dhurta-black",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Dhurta Black — developer & advanced privacy browser by Dhurta.inc.",
   "main": "dist-electron/main.js",
   "author": {
@@ -58,7 +58,7 @@
   },
   "build": {
     "appId": "inc.dhurta.black",
-    "productName": "Dhurta Black",
+    "productName": "DhurtaBlack",
     "copyright": "Copyright © 2026 Dhurta.inc. All Rights Reserved.",
     "directories": {
       "output": "release",
@@ -119,7 +119,6 @@
         }
       ],
       "icon": "build/icon.png",
-      "executableName": "DhurtaBlack",
       "requestedExecutionLevel": "asInvoker",
       "publisherName": "Dhurta.org",
       "signingHashAlgorithms": ["sha256"],
@@ -132,7 +131,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Dhurta Black",
       "uninstallDisplayName": "Dhurta Black",
-      "license": "LICENSE"
+      "license": "LICENSE",
+      "artifactName": "Dhurta Black-${version}-${arch}.${ext}"
     },
     "appx": {
       "applicationId": "DhurtaBlack",
@@ -142,10 +142,11 @@
       "identityName": "28516Dhurta.org.DhurtaDeveloperBrowser",
       "publisher": "CN=095C7737-926D-4FDD-B3E1-1B8D33DB5EEE",
       "languages": ["en-US"],
-      "showNameOnTiles": false
+      "showNameOnTiles": false,
+      "artifactName": "Dhurta Black-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "artifactName": "Dhurta Black-${version}-portable.${ext}"
     },
     "mac": {
       "target": [
@@ -168,10 +169,14 @@
       "icon": "build/icon.png",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "extendInfo": {
+        "CFBundleName": "Dhurta Black",
+        "CFBundleDisplayName": "Dhurta Black"
+      }
     },
     "dmg": {
-      "title": "${productName} ${version}",
+      "title": "Dhurta Black ${version}",
       "window": {
         "width": 540,
         "height": 380
@@ -200,6 +205,7 @@
       "desktop": {
         "entry": {
           "MimeType": "x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/dhurta-connect;",
+          "Name": "Dhurta Black",
           "StartupWMClass": "Dhurta"
         }
       }
