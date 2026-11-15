@@ -1,6 +1,6 @@
 {
   "name": "dhurta-black",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Dhurta Black — developer & advanced privacy browser by Dhurta.inc.",
   "main": "dist-electron/main.js",
   "author": {
@@ -119,6 +119,7 @@
         }
       ],
       "icon": "build/icon.png",
+      "executableName": "DhurtaBlack",
       "requestedExecutionLevel": "asInvoker",
       "publisherName": "Dhurta.org",
       "signingHashAlgorithms": ["sha256"],
