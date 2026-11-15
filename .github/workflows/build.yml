@@ -165,13 +165,20 @@ jobs:
           # Pre-seed the electron-builder winCodeSign cache with the Windows SDK's
           # makepri.exe / makeappx.exe. The bundled tools are circa 2013/2017 and
           # reject APPX identity names starting with digits (28516Dhurta.org...).
-          # By placing SDK tools in the cache BEFORE packaging, electron-builder
-          # finds them and skips its own download entirely.
+          #
+          # KEY: we extract to a TEMP dir first, then copy the archive contents FLAT
+          # into $cacheDir. The .7z archive has a winCodeSign-2.6.0/ wrapper folder
+          # inside, so extracting directly to $cacheDir yields a double-nested path
+          # ($cacheDir\winCodeSign-2.6.0\windows-10\x64\) that electron-builder never
+          # sees. Extracting to temp + copying flat guarantees files land at the path
+          # electron-builder expects ($cacheDir\windows-10\x64\). We also write
+          # info.json so electron-builder treats the dir as a valid cache hit and
+          # never re-downloads (which would overwrite our patched tools).
 
-          $cacheDir = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
-          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+          $cacheDir   = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
+          $extractTmp = "$env:TEMP\winCodeSign-extract"
 
-          # --- Download & extract winCodeSign-2.6.0 (all required auxiliary files) ---
+          # --- Download winCodeSign-2.6.0.7z ---
           $archiveUrl  = 'https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z'
           $archivePath = "$env:TEMP\winCodeSign.7z"
           Write-Host "Downloading $archiveUrl ..."
@@ -179,22 +186,32 @@ jobs:
           Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing -TimeoutSec 120
           $sz = (Get-Item $archivePath).Length
           Write-Host "Downloaded $([math]::Round($sz/1KB)) KB"
-          if ($sz -lt 100000) { throw "Archive too small ($sz bytes) - download likely failed" }
+          if ($sz -lt 100000) { throw "Archive too small ($sz bytes) — download failed" }
 
-          & 'C:\Program Files\7-Zip\7z.exe' x $archivePath "-o$cacheDir" -y
+          # --- Extract to a fresh temp dir so we can inspect the layout ---
+          Remove-Item -Recurse -Force $extractTmp -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $extractTmp | Out-Null
+          & 'C:\Program Files\7-Zip\7z.exe' x $archivePath "-o$extractTmp" -y
           if ($LASTEXITCODE -ne 0) { throw "7z extraction failed (exit $LASTEXITCODE)" }
 
-          # Locate the x64 tool directory inside the extracted archive.
-          # Handles both flat layouts (windows-10/x64/) and archives with a
-          # wrapper folder (winCodeSign-2.6.0/windows-10/x64/).
+          # --- Find x64 dir; walk up two levels to the archive root ---
+          $makepri = Get-ChildItem $extractTmp -Recurse -Filter 'makepri.exe' |
+            Where-Object { $_.DirectoryName -match '\\x64$' } |
+            Select-Object -First 1
+          if (-not $makepri) { throw "makepri.exe not found in extracted archive under $extractTmp" }
+
+          # x64 -> windows-10 -> archive root (handles flat and wrapper-folder layouts)
+          $archiveRoot = Split-Path (Split-Path $makepri.DirectoryName -Parent) -Parent
+          Write-Host "Archive root: $archiveRoot"
+
+          # --- Copy archive root contents FLAT into $cacheDir (removes wrapper) ---
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+          Copy-Item -Path "$archiveRoot\*" -Destination $cacheDir -Recurse -Force
+
+          # --- Verify the expected layout is in place ---
           $wcX64 = Join-Path $cacheDir 'windows-10\x64'
-          if (-not (Test-Path $wcX64)) {
-            $found = Get-ChildItem $cacheDir -Recurse -Filter 'makepri.exe' |
-              Where-Object { $_.DirectoryName -match '\\x64$' } |
-              Select-Object -First 1
-            if (-not $found) { throw "makepri.exe not found after extraction in $cacheDir" }
-            $wcX64 = $found.DirectoryName
-            Write-Host "Archive had wrapper folder; x64 dir: $wcX64"
+          if (-not (Test-Path (Join-Path $wcX64 'makepri.exe'))) {
+            throw "makepri.exe not at expected path after copy: $wcX64\makepri.exe"
           }
           Write-Host "Cache x64 dir: $wcX64"
 
@@ -217,7 +234,13 @@ jobs:
             $v = (Get-Item $dst).VersionInfo
             Write-Host "Patched $tool -> v$($v.FileVersion) | $($v.LegalCopyright)"
           }
-          Write-Host 'winCodeSign cache seeded with modern SDK tools'
+
+          # --- Write info.json so electron-builder treats this as a valid cache hit ---
+          # builder-util/src/binDownload.ts checks for info.json before downloading;
+          # without it electron-builder re-downloads and re-extracts, overwriting our patch.
+          Set-Content -Path (Join-Path $cacheDir 'info.json') -Value '{"version":"2.6.0"}' -Encoding UTF8
+
+          Write-Host 'winCodeSign cache seeded and patched successfully'
 
       # ── x64 packages (REQUIRED) ──────────────────────────────────────────────
       # Packages x64 and writes latest.yml / latest-mac.yml / latest-linux.yml
