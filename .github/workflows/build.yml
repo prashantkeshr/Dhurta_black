@@ -159,44 +159,46 @@ jobs:
       # build succeeds without upgrading electron-builder globally.
       - name: Patch winCodeSign for APPX (system SDK makepri/makeappx)
         if: matrix.name == 'windows'
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $archiveUrl = "https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z"
+          $archiveUrl  = 'https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z'
           $archivePath = "$env:TEMP\winCodeSign.7z"
           $cacheDir    = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
 
-          Write-Host "Downloading winCodeSign-2.6.0..."
+          Write-Host 'Downloading winCodeSign-2.6.0...'
           Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
           Write-Host "Extracting to $cacheDir..."
-          & "C:\Program Files\7-Zip\7z.exe" x $archivePath "-o$cacheDir" -y
+          & 'C:\Program Files\7-Zip\7z.exe' x $archivePath "-o$cacheDir" -y
 
-          # Locate the highest-version Windows Kits 10 SDK
-          $wkBin = "C:\Program Files (x86)\Windows Kits\10\bin"
-          $latestSdk = Get-ChildItem $wkBin -Directory 2>$null |
+          $wkBin = 'C:\Program Files (x86)\Windows Kits\10\bin'
+          $latestSdk = Get-ChildItem $wkBin -Directory |
             Where-Object { $_.Name -match '^\d' } |
             Sort-Object { [Version]$_.Name } -Descending |
             Select-Object -First 1
 
           if (-not $latestSdk) {
-            Write-Warning "Windows Kits not found — APPX will use bundled (may fail)"
+            Write-Warning 'Windows Kits not found - APPX will use bundled tools'
             exit 0
           }
-          $sdkX64 = Join-Path $latestSdk.FullName "x64"
-          $wcX64  = Join-Path $cacheDir "windows-10\x64"
-          Write-Host "SDK path: $sdkX64"
+          $sdkX64 = Join-Path $latestSdk.FullName 'x64'
+          $wcX64  = Join-Path $cacheDir 'windows-10\x64'
+          Write-Host "SDK: $sdkX64"
 
-          foreach ($tool in @("makepri.exe", "makeappx.exe")) {
+          foreach ($tool in @('makepri.exe', 'makeappx.exe')) {
             $src = Join-Path $sdkX64 $tool
             $dst = Join-Path $wcX64  $tool
             if ((Test-Path $src) -and (Test-Path $dst)) {
               Copy-Item -Path $src -Destination $dst -Force
-              Write-Host "Replaced $tool with SDK $($latestSdk.Name)"
+              Write-Host "Replaced $tool (SDK $($latestSdk.Name))"
             } else {
-              Write-Warning "$tool not replaced (src exists: $(Test-Path $src), dst exists: $(Test-Path $dst))"
+              $srcOk = Test-Path $src
+              $dstOk = Test-Path $dst
+              Write-Warning "$tool not replaced (src=$srcOk dst=$dstOk)"
             }
           }
+          Write-Host 'winCodeSign patched'
 
       # ── x64 packages (REQUIRED) ──────────────────────────────────────────────
       # Packages x64 and writes latest.yml / latest-mac.yml / latest-linux.yml
