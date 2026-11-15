@@ -148,63 +148,76 @@ jobs:
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
           fi
 
-      # ── APPX: patch winCodeSign cache with system Windows SDK tools ─────────
-      # electron-builder 24.x bundles winCodeSign-2.6.0 whose makepri.exe
-      # (Windows SDK ~2017) rejects APPX Identity Names starting with digits
-      # (e.g. "28516Dhurta.org.DhurtaDeveloperBrowser") — error C00CEE2C
-      # "Illegal name character". The Windows 11 SDK on windows-2022 runners
-      # supports digit-prefixed names. We pre-populate the electron-builder
-      # cache with the official winCodeSign archive, then overwrite the two
-      # manifest-validation tools with the system SDK equivalents so the APPX
-      # build succeeds without upgrading electron-builder globally.
+      # ── APPX: make package.json "description" XML-safe (ROOT-CAUSE FIX) ─────
+      # electron-builder 24.13.3 AppxTarget.writeManifest() pastes the
+      # package.json "description" into AppxManifest.xml WITHOUT XML-escaping
+      # it (<Description> on line 16 and uap:VisualElements Description="…").
+      # Ours contains a bare "&" ("developer & advanced"), which is malformed
+      # XML, so makepri rejects the manifest at line 16, column 44 (the char
+      # after the "&"). Reproduced locally with the exact manifest CI generates:
+      #   makepri 10.0.17763 (winCodeSign-2.6.0): PRI191 + error C00CEE2C
+      #     "Illegal name character"
+      #   makepri 10.0.26100 (Win11 SDK):         PRI191 "Whitespace is not
+      #     allowed at this location"
+      # Both makepri versions print "Copyright (C) 2013", so that banner never
+      # showed which tool ran. The digit-prefixed Store identity
+      # "28516Dhurta.org.DhurtaDeveloperBrowser" is NOT a problem: the bundled
+      # makepri builds the PRI files fine once the "&" is gone.
+      # This rewrites "&" -> "and" in the CI checkout only (git is untouched).
+      - name: Make package description XML-safe for AppxManifest
+        if: matrix.name == 'windows'
+        shell: pwsh
+        run: |
+          node -e "const fs=require('fs'),f='package.json',p=JSON.parse(fs.readFileSync(f,'utf8')),d=p.description;p.description=d.replace(/\s*&\s*/g,' and ');if(p.description.includes('<'))throw new Error('description contains <, not XML-safe');fs.writeFileSync(f,JSON.stringify(p,null,2)+'\n');console.log('description: '+JSON.stringify(d)+' -> '+JSON.stringify(p.description))"
+
+      # ── APPX: seed the winCodeSign cache with the Windows 11 SDK makepri ────
+      # Verified against the versions pinned in package-lock.json
+      # (electron-builder 24.13.3, app-builder-lib 24.13.3, app-builder-bin 4.0.0):
+      #  • There is NO JavaScript cache check and no info.json sentinel.
+      #    app-builder-lib getSignVendorPath() -> getBin("winCodeSign") just
+      #    runs `app-builder download-artifact --name winCodeSign` (Go binary).
+      #  • That command's only cache-validity check is whether the DIRECTORY
+      #    <cache>\winCodeSign\winCodeSign-2.6.0 exists; even an empty dir is a
+      #    hit, and it is never re-downloaded or overwritten afterwards.
+      #  • electron-builder then uses, from that dir: rcedit-x64.exe (stamps
+      #    the .exe for EVERY Windows target), windows-10\x64\makepri.exe and
+      #    makeappx.exe (AppX), windows-10\x64\signtool.exe (code signing) and
+      #    appxAssets\ (default tiles). The archive is flat (no wrapper folder).
+      # A hand-built partial cache therefore breaks rcedit and signing. Instead
+      # we let app-builder itself create the complete cache (same binary and
+      # path electron-builder uses), then swap ONLY makepri.exe for the newest
+      # Windows SDK copy (verified to work alongside the bundled DLLs).
       - name: Seed winCodeSign cache with modern SDK tools
         if: matrix.name == 'windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Build a minimal winCodeSign-2.6.0 cache using tools already on the runner.
-          # No download, no archive extraction, no wrapper-folder confusion.
-          #
-          # HOW IT WORKS:
-          #   electron-builder (builder-util/src/binDownload.ts) checks for info.json
-          #   inside the cache dir before attempting a download. If info.json exists,
-          #   it treats the directory as a valid cache hit and uses the files there.
-          #   We place the Windows 11 SDK makepri.exe / makeappx.exe at the exact
-          #   path electron-builder expects, then write info.json — so the old 2013
-          #   bundled tools are never downloaded or used.
-          #
-          # WHY THE OLD APPROACH FAILED:
-          #   Downloading + extracting winCodeSign-2.6.0.7z put files inside a
-          #   winCodeSign-2.6.0/ wrapper folder (double-nested). We patched the wrong
-          #   path, info.json was never written, and electron-builder re-downloaded
-          #   the archive during Package x64, overwriting everything with 2013 tools.
+          # The exact binary builder-util's executeAppBuilder() runs.
+          $appBuilder = (node -p "require('app-builder-bin').appBuilderPath" | Out-String).Trim()
+          if (-not $appBuilder -or -not (Test-Path -LiteralPath $appBuilder)) { throw "app-builder binary not found: '$appBuilder'" }
 
-          $cacheDir = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
-          $wcX64    = Join-Path $cacheDir 'windows-10\x64'
-          New-Item -ItemType Directory -Force -Path $wcX64 | Out-Null
+          # Same call electron-builder makes: downloads + extracts on a miss,
+          # prints the cache dir on stdout (logs go to stderr).
+          $out = @(& $appBuilder download-artifact --name winCodeSign)
+          if ($LASTEXITCODE -ne 0) { throw "app-builder download-artifact winCodeSign failed (exit $LASTEXITCODE)" }
+          $wcDir = $out | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -Last 1
+          if (-not $wcDir -or -not (Test-Path -LiteralPath $wcDir)) { throw "download-artifact returned no usable path: '$wcDir'" }
+          Write-Host "winCodeSign cache: $wcDir"
 
-          # Locate the latest Windows 11 SDK on the runner
-          $sdkBin   = 'C:\Program Files (x86)\Windows Kits\10\bin'
-          $latestSdk = Get-ChildItem $sdkBin -Directory |
-            Where-Object { $_.Name -match '^\d' } |
-            Sort-Object { [Version]($_.Name) } -Descending |
-            Select-Object -First 1
-          if (-not $latestSdk) { throw "Windows SDK not found under $sdkBin" }
-          $sdkX64 = Join-Path $latestSdk.FullName 'x64'
-          Write-Host "SDK $($latestSdk.Name) at $sdkX64"
+          $required = 'rcedit-x64.exe', 'windows-10\x64\makepri.exe', 'windows-10\x64\makeappx.exe', 'windows-10\x64\signtool.exe'
+          $missing = @($required | Where-Object { -not (Test-Path (Join-Path $wcDir $_)) })
+          if ($missing.Count) { throw "winCodeSign cache incomplete, missing: $($missing -join ', ')" }
 
-          # Copy the two tools electron-builder needs for unsigned APPX builds
-          foreach ($tool in @('makepri.exe', 'makeappx.exe')) {
-            $src = Join-Path $sdkX64 $tool
-            if (-not (Test-Path $src)) { throw "SDK tool not found: $src" }
-            Copy-Item -Path $src -Destination (Join-Path $wcX64 $tool) -Force
-            $v = (Get-Item (Join-Path $wcX64 $tool)).VersionInfo
-            Write-Host "$tool -> v$($v.FileVersion) | $($v.LegalCopyright)"
-          }
+          $sdkMakepri = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64\makepri.exe' |
+            Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
+          if (-not $sdkMakepri) { throw 'No Windows SDK makepri.exe found on the runner' }
 
-          # Write info.json — this is the cache-validity sentinel electron-builder checks
-          Set-Content -Path (Join-Path $cacheDir 'info.json') -Value '{"version":"2.6.0"}' -Encoding ASCII
-          Write-Host "Cache ready at $cacheDir"
+          $target = Join-Path $wcDir 'windows-10\x64\makepri.exe'
+          Write-Host "bundled makepri: $((Get-Item $target).VersionInfo.FileVersion)"
+          Copy-Item -LiteralPath $sdkMakepri.FullName -Destination $target -Force
+          $now = (Get-Item $target).VersionInfo.FileVersion
+          if ($now -ne $sdkMakepri.VersionInfo.FileVersion) { throw "makepri swap failed: $target is $now" }
+          Write-Host "makepri now:     $now (from $($sdkMakepri.FullName))"
 
       # ── x64 packages (REQUIRED) ──────────────────────────────────────────────
       # Packages x64 and writes latest.yml / latest-mac.yml / latest-linux.yml
