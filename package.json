@@ -1,6 +1,6 @@
 {
   "name": "dhurta-black",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Dhurta Black — developer & advanced privacy browser by Dhurta.inc.",
   "main": "dist-electron/main.js",
   "author": {
@@ -110,6 +110,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "appx",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.png",
@@ -132,8 +138,8 @@
       "backgroundColor": "#060608",
       "displayName": "Dhurta Black",
       "publisherDisplayName": "Dhurta.org",
-      "identityName": "Dhurta.DhurtaBlack",
-      "publisher": "CN=Dhurta.org",
+      "identityName": "28516Dhurta.org.DhurtaDeveloperBrowser",
+      "publisher": "CN=095C7737-926D-4FDD-B3E1-1B8D33DB5EEE",
       "languages": ["en-US"],
       "showNameOnTiles": false
     },
