@@ -157,48 +157,67 @@ jobs:
       # cache with the official winCodeSign archive, then overwrite the two
       # manifest-validation tools with the system SDK equivalents so the APPX
       # build succeeds without upgrading electron-builder globally.
-      - name: Patch winCodeSign for APPX (system SDK makepri/makeappx)
+      - name: Seed winCodeSign cache with modern SDK tools
         if: matrix.name == 'windows'
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Continue'
+          $ErrorActionPreference = 'Stop'
+          # Pre-seed the electron-builder winCodeSign cache with the Windows SDK's
+          # makepri.exe / makeappx.exe. The bundled tools are circa 2013/2017 and
+          # reject APPX identity names starting with digits (28516Dhurta.org...).
+          # By placing SDK tools in the cache BEFORE packaging, electron-builder
+          # finds them and skips its own download entirely.
+
+          $cacheDir = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
+          # --- Download & extract winCodeSign-2.6.0 (all required auxiliary files) ---
           $archiveUrl  = 'https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z'
           $archivePath = "$env:TEMP\winCodeSign.7z"
-          $cacheDir    = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
+          Write-Host "Downloading $archiveUrl ..."
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing -TimeoutSec 120
+          $sz = (Get-Item $archivePath).Length
+          Write-Host "Downloaded $([math]::Round($sz/1KB)) KB"
+          if ($sz -lt 100000) { throw "Archive too small ($sz bytes) - download likely failed" }
 
-          Write-Host 'Downloading winCodeSign-2.6.0...'
-          Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
-          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
-          Write-Host "Extracting to $cacheDir..."
           & 'C:\Program Files\7-Zip\7z.exe' x $archivePath "-o$cacheDir" -y
+          if ($LASTEXITCODE -ne 0) { throw "7z extraction failed (exit $LASTEXITCODE)" }
 
-          $wkBin = 'C:\Program Files (x86)\Windows Kits\10\bin'
-          $latestSdk = Get-ChildItem $wkBin -Directory |
+          # Locate the x64 tool directory inside the extracted archive.
+          # Handles both flat layouts (windows-10/x64/) and archives with a
+          # wrapper folder (winCodeSign-2.6.0/windows-10/x64/).
+          $wcX64 = Join-Path $cacheDir 'windows-10\x64'
+          if (-not (Test-Path $wcX64)) {
+            $found = Get-ChildItem $cacheDir -Recurse -Filter 'makepri.exe' |
+              Where-Object { $_.DirectoryName -match '\\x64$' } |
+              Select-Object -First 1
+            if (-not $found) { throw "makepri.exe not found after extraction in $cacheDir" }
+            $wcX64 = $found.DirectoryName
+            Write-Host "Archive had wrapper folder; x64 dir: $wcX64"
+          }
+          Write-Host "Cache x64 dir: $wcX64"
+
+          # --- Overwrite makepri/makeappx with the Windows 11 SDK versions ---
+          $sdkBin = 'C:\Program Files (x86)\Windows Kits\10\bin'
+          $latestSdk = Get-ChildItem $sdkBin -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '^\d' } |
-            Sort-Object { [Version]$_.Name } -Descending |
+            Sort-Object { [Version]($_.Name) } -Descending |
             Select-Object -First 1
 
-          if (-not $latestSdk) {
-            Write-Warning 'Windows Kits not found - APPX will use bundled tools'
-            exit 0
-          }
+          if (-not $latestSdk) { throw "Windows 10 SDK not found under $sdkBin" }
           $sdkX64 = Join-Path $latestSdk.FullName 'x64'
-          $wcX64  = Join-Path $cacheDir 'windows-10\x64'
-          Write-Host "SDK: $sdkX64"
+          Write-Host "SDK: $sdkX64 ($($latestSdk.Name))"
 
           foreach ($tool in @('makepri.exe', 'makeappx.exe')) {
             $src = Join-Path $sdkX64 $tool
-            $dst = Join-Path $wcX64  $tool
-            if ((Test-Path $src) -and (Test-Path $dst)) {
-              Copy-Item -Path $src -Destination $dst -Force
-              Write-Host "Replaced $tool (SDK $($latestSdk.Name))"
-            } else {
-              $srcOk = Test-Path $src
-              $dstOk = Test-Path $dst
-              Write-Warning "$tool not replaced (src=$srcOk dst=$dstOk)"
-            }
+            if (-not (Test-Path $src)) { throw "SDK tool not found: $src" }
+            $dst = Join-Path $wcX64 $tool
+            Copy-Item -Path $src -Destination $dst -Force
+            $v = (Get-Item $dst).VersionInfo
+            Write-Host "Patched $tool -> v$($v.FileVersion) | $($v.LegalCopyright)"
           }
-          Write-Host 'winCodeSign patched'
+          Write-Host 'winCodeSign cache seeded with modern SDK tools'
 
       # ── x64 packages (REQUIRED) ──────────────────────────────────────────────
       # Packages x64 and writes latest.yml / latest-mac.yml / latest-linux.yml
