@@ -192,6 +192,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # app-builder's archive extraction requires 7za in PATH.
+          # windows-2022 ships 7-Zip at this fixed location; app-builder
+          # calls "7za" which is 7za.exe in that directory.
+          $env:PATH = "C:\Program Files\7-Zip;" + $env:PATH
+
           # The exact binary builder-util's executeAppBuilder() runs.
           $appBuilder = (node -p "require('app-builder-bin').appBuilderPath" | Out-String).Trim()
           if (-not $appBuilder -or -not (Test-Path -LiteralPath $appBuilder)) { throw "app-builder binary not found: '$appBuilder'" }
