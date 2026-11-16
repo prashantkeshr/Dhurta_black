@@ -171,58 +171,63 @@ jobs:
           node -e "const fs=require('fs'),f='package.json',p=JSON.parse(fs.readFileSync(f,'utf8')),d=p.description;p.description=d.replace(/\s*&\s*/g,' and ');if(p.description.includes('<'))throw new Error('description contains <, not XML-safe');fs.writeFileSync(f,JSON.stringify(p,null,2)+'\n');console.log('description: '+JSON.stringify(d)+' -> '+JSON.stringify(p.description))"
 
       # ── APPX: seed the winCodeSign cache with the Windows 11 SDK makepri ────
-      # Verified against the versions pinned in package-lock.json
-      # (electron-builder 24.13.3, app-builder-lib 24.13.3, app-builder-bin 4.0.0):
-      #  • There is NO JavaScript cache check and no info.json sentinel.
-      #    app-builder-lib getSignVendorPath() -> getBin("winCodeSign") just
-      #    runs `app-builder download-artifact --name winCodeSign` (Go binary).
-      #  • That command's only cache-validity check is whether the DIRECTORY
-      #    <cache>\winCodeSign\winCodeSign-2.6.0 exists; even an empty dir is a
-      #    hit, and it is never re-downloaded or overwritten afterwards.
-      #  • electron-builder then uses, from that dir: rcedit-x64.exe (stamps
-      #    the .exe for EVERY Windows target), windows-10\x64\makepri.exe and
-      #    makeappx.exe (AppX), windows-10\x64\signtool.exe (code signing) and
-      #    appxAssets\ (default tiles). The archive is flat (no wrapper folder).
-      # A hand-built partial cache therefore breaks rcedit and signing. Instead
-      # we let app-builder itself create the complete cache (same binary and
-      # path electron-builder uses), then swap ONLY makepri.exe for the newest
-      # Windows SDK copy (verified to work alongside the bundled DLLs).
+      # app-builder-lib getBin("winCodeSign") checks only whether the cache dir
+      # exists; if it does, it uses it as-is without re-downloading.
+      # app-builder download-artifact internally requires "7za" in PATH to
+      # extract the archive — which is NOT present on windows-2022 runners
+      # (they ship 7z.exe in C:\Program Files\7-Zip, not 7za).
+      # We therefore download + extract the archive ourselves with PowerShell
+      # and then swap only makepri.exe for the Windows 11 SDK version.
       - name: Seed winCodeSign cache with modern SDK tools
         if: matrix.name == 'windows'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # app-builder's archive extraction requires 7za in PATH.
-          # windows-2022 ships 7-Zip at this fixed location; app-builder
-          # calls "7za" which is 7za.exe in that directory.
-          $env:PATH = "C:\Program Files\7-Zip;" + $env:PATH
+          $cacheDir = "$env:LOCALAPPDATA\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0"
+          $wcX64    = Join-Path $cacheDir 'windows-10\x64'
 
-          # The exact binary builder-util's executeAppBuilder() runs.
-          $appBuilder = (node -p "require('app-builder-bin').appBuilderPath" | Out-String).Trim()
-          if (-not $appBuilder -or -not (Test-Path -LiteralPath $appBuilder)) { throw "app-builder binary not found: '$appBuilder'" }
+          if (-not (Test-Path (Join-Path $cacheDir 'rcedit-x64.exe'))) {
+            $url     = 'https://github.com/electron-userland/electron-builder-binaries/releases/download/winCodeSign-2.6.0/winCodeSign-2.6.0.7z'
+            $archive = Join-Path $env:TEMP 'winCodeSign-2.6.0.7z'
+            Write-Host "Downloading $url ..."
+            Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+            Write-Host "Downloaded $('{0:N1}' -f ((Get-Item $archive).Length/1MB)) MB"
 
-          # Same call electron-builder makes: downloads + extracts on a miss,
-          # prints the cache dir on stdout (logs go to stderr).
-          $out = @(& $appBuilder download-artifact --name winCodeSign)
-          if ($LASTEXITCODE -ne 0) { throw "app-builder download-artifact winCodeSign failed (exit $LASTEXITCODE)" }
-          $wcDir = $out | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -Last 1
-          if (-not $wcDir -or -not (Test-Path -LiteralPath $wcDir)) { throw "download-artifact returned no usable path: '$wcDir'" }
-          Write-Host "winCodeSign cache: $wcDir"
+            $sevenZip = @('C:\Program Files\7-Zip\7z.exe','C:\Program Files\7-Zip\7za.exe') |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+            if (-not $sevenZip) { throw '7-Zip not found on runner' }
+            Write-Host "Extracting with $sevenZip ..."
 
-          $required = 'rcedit-x64.exe', 'windows-10\x64\makepri.exe', 'windows-10\x64\makeappx.exe', 'windows-10\x64\signtool.exe'
-          $missing = @($required | Where-Object { -not (Test-Path (Join-Path $wcDir $_)) })
+            $tmp = Join-Path $env:TEMP 'wcs-extract'
+            if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+            New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+            & $sevenZip x $archive -o"$tmp" -y | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "7-Zip extraction failed (exit $LASTEXITCODE)" }
+
+            $src = $tmp
+            if (Test-Path (Join-Path $tmp 'winCodeSign-2.6.0')) { $src = Join-Path $tmp 'winCodeSign-2.6.0' }
+            New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+            Copy-Item -Path (Join-Path $src '*') -Destination $cacheDir -Recurse -Force
+            Remove-Item -Recurse -Force $tmp
+            Remove-Item -Force $archive
+            Write-Host "Extracted to $cacheDir"
+          } else {
+            Write-Host "Cache already present, skipping download"
+          }
+
+          $required = 'rcedit-x64.exe','windows-10\x64\makepri.exe','windows-10\x64\makeappx.exe','windows-10\x64\signtool.exe'
+          $missing = @($required | Where-Object { -not (Test-Path (Join-Path $cacheDir $_)) })
           if ($missing.Count) { throw "winCodeSign cache incomplete, missing: $($missing -join ', ')" }
 
           $sdkMakepri = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64\makepri.exe' |
             Sort-Object { [version]$_.Directory.Parent.Name } -Descending | Select-Object -First 1
           if (-not $sdkMakepri) { throw 'No Windows SDK makepri.exe found on the runner' }
 
-          $target = Join-Path $wcDir 'windows-10\x64\makepri.exe'
+          $target = Join-Path $wcX64 'makepri.exe'
           Write-Host "bundled makepri: $((Get-Item $target).VersionInfo.FileVersion)"
           Copy-Item -LiteralPath $sdkMakepri.FullName -Destination $target -Force
-          $now = (Get-Item $target).VersionInfo.FileVersion
-          if ($now -ne $sdkMakepri.VersionInfo.FileVersion) { throw "makepri swap failed: $target is $now" }
-          Write-Host "makepri now:     $now (from $($sdkMakepri.FullName))"
+          Write-Host "makepri now:     $((Get-Item $target).VersionInfo.FileVersion) (from $($sdkMakepri.FullName))"
+          Write-Host "Cache ready at $cacheDir"
 
       # ── x64 packages (REQUIRED) ──────────────────────────────────────────────
       # Packages x64 and writes latest.yml / latest-mac.yml / latest-linux.yml
