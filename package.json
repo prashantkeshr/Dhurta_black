@@ -135,9 +135,9 @@
       "artifactName": "Dhurta Black-${version}-${arch}.${ext}"
     },
     "appx": {
-      "applicationId": "DhurtaBlack",
+      "applicationId": "DhurtaDeveloperBrowser",
       "backgroundColor": "#060608",
-      "displayName": "Dhurta Black",
+      "displayName": "Dhurta Developer Browser",
       "publisherDisplayName": "Dhurta.org",
       "identityName": "28516Dhurta.org.DhurtaDeveloperBrowser",
       "publisher": "CN=095C7737-926D-4FDD-B3E1-1B8D33DB5EEE",
