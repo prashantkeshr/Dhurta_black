@@ -1,7 +1,7 @@
 {
   "name": "dhurta-black",
-  "version": "1.0.13",
-  "description": "Dhurta Black — developer & advanced privacy browser by Dhurta.inc.",
+  "version": "1.0.14",
+  "description": "Dhurta Black — developer and advanced privacy browser by Dhurta.inc.",
   "main": "dist-electron/main.js",
   "author": {
     "name": "Dhurta.inc",
@@ -121,7 +121,9 @@
       "icon": "build/icon.png",
       "requestedExecutionLevel": "asInvoker",
       "publisherName": "Dhurta.org",
-      "signingHashAlgorithms": ["sha256"],
+      "signingHashAlgorithms": [
+        "sha256"
+      ],
       "rfc3161TimeStampServer": "http://timestamp.digicert.com"
     },
     "nsis": {
@@ -141,7 +143,9 @@
       "publisherDisplayName": "Dhurta.org",
       "identityName": "28516Dhurta.org.DhurtaDeveloperBrowser",
       "publisher": "CN=095C7737-926D-4FDD-B3E1-1B8D33DB5EEE",
-      "languages": ["en-US"],
+      "languages": [
+        "en-US"
+      ],
       "showNameOnTiles": false,
       "artifactName": "Dhurta Black-${version}.${ext}"
     },
@@ -218,4 +222,3 @@
     ]
   }
 }
-
